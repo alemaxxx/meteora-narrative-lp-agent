@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Meteora Narrative LP Agent</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #131722;
+    --panel-border: #232838;
+    --text: #e6e9f0;
+    --text-dim: #8b93a7;
+    --accent: #6ee7b7;
+    --accent-dim: #1f4d3d;
+    --danger: #f87171;
+    --warn: #fbbf24;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-dim); font-size: 14px; margin: 0 0 28px; }
+  .banner {
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    font-size: 13px;
+    margin-bottom: 28px;
+    color: #d1fae5;
+  }
+  .banner b { color: var(--accent); }
+  .banner a { color: var(--accent); }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: var(--radius);
+    padding: 20px;
+    margin-bottom: 20px;
+  }
+  section h2 {
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    margin: 0 0 14px;
+  }
+  label { display: block; font-size: 13px; color: var(--text-dim); margin: 12px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input[type=text], input[type=password], input[type=number] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 9px 10px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: inherit;
+  }
+  input:focus { outline: 1px solid var(--accent); }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  .status { font-size: 13px; margin-top: 10px; }
+  .status.ok { color: var(--accent); }
+  .status.err { color: var(--danger); }
+  .status.warn { color: var(--warn); }
+  button {
+    background: var(--accent);
+    color: #08130f;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.secondary {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--panel-border);
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .profiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .profile-card {
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 14px;
+    cursor: pointer;
+    text-align: left;
+    background: var(--bg);
+    color: var(--text);
+    font-family: inherit;
+  }
+  .profile-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .profile-card .name { font-weight: 700; margin-bottom: 4px; }
+  .profile-card .desc { font-size: 12px; color: var(--text-dim); }
+  .advanced-toggle {
+    background: none;
+    border: none;
+    color: var(--accent);
+    font-size: 13px;
+    padding: 0;
+    margin-top: 14px;
+    cursor: pointer;
+  }
+  .advanced { display: none; margin-top: 14px; border-top: 1px solid var(--panel-border); padding-top: 14px; }
+  .advanced.open { display: block; }
+  .advanced .row { margin-bottom: 4px; }
+  .field-note { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  pre {
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .footer-note { font-size: 12px; color: var(--text-dim); margin-top: 30px; text-align: center; }
+  .footer-note a { color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Meteora Narrative LP Agent</h1>
+  <p class="subtitle">Connect your own infrastructure, pick a risk profile, deploy.</p>
+
+  <div class="banner">
+    <b>How "connect wallet" actually works here:</b> this page never asks for a private
+    key or seed phrase, and there is no server run by this project that your wallet or
+    funds ever touch. You run your own Hummingbot Gateway + API instance, import your
+    wallet into <em>it</em> (encrypted locally, on your machine) — see
+    <a href="../docs/wallet-setup.md" target="_blank">docs/wallet-setup.md</a> — and this
+    page only talks to <em>your own</em> API URL, directly from your browser, to register
+    and deploy the controller config below.
+  </div>
+
+  <section>
+    <h2>1 · Your Hummingbot API</h2>
+    <label for="apiUrl">API URL</label>
+    <input type="text" id="apiUrl" placeholder="http://localhost:8000">
+    <div class="row">
+      <div>
+        <label for="apiUser">Username</label>
+        <input type="text" id="apiUser" placeholder="admin">
+      </div>
+      <div>
+        <label for="apiPass">Password</label>
+        <input type="password" id="apiPass" placeholder="admin">
+      </div>
+    </div>
+    <div class="field-note">
+      Stored only in this browser's localStorage, on this device. Sent only to the API
+      URL above when you click a button on this page — never anywhere else.
+    </div>
+    <div style="margin-top:12px;">
+      <button class="secondary" onclick="testConnection()">Test connection</button>
+      <span id="connStatus" class="status"></span>
+    </div>
+  </section>
+
+  <section>
+    <h2>2 · Your wallet</h2>
+    <label for="walletAddress">Public wallet address (Solana)</label>
+    <input type="text" id="walletAddress" placeholder="already imported into your own Gateway — paste the PUBLIC address here, never a private key">
+    <div class="field-note">
+      For display/verification only — this page doesn't use it to sign anything. Your
+      Gateway instance signs using the key you imported directly into it.
+    </div>
+  </section>
+
+  <section>
+    <h2>3 · Risk profile</h2>
+    <div class="profiles" id="profileCards"></div>
+    <button class="advanced-toggle" onclick="toggleAdvanced()">⚙ Advanced (customize every field) ▾</button>
+    <div class="advanced" id="advancedPanel"></div>
+  </section>
+
+  <section>
+    <h2>4 · Pool</h2>
+    <div class="field-note" style="margin-bottom:10px;">
+      Automatic pool discovery (on-chain + narrative funnel) runs server-side via
+      <code>routines/narrative_lp_funnel.py</code> — this page deploys against one pool
+      you specify directly. Paste a pool that already cleared the funnel (or one you've
+      chosen manually).
+    </div>
+    <div class="row">
+      <div>
+        <label for="tradingPair">Trading pair</label>
+        <input type="text" id="tradingPair" placeholder="SOME-USDC">
+      </div>
+      <div>
+        <label for="poolAddress">Pool address</label>
+        <input type="text" id="poolAddress" placeholder="Meteora DLMM pool address">
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>5 · Deploy</h2>
+    <button class="secondary" onclick="previewConfig()">Preview config</button>
+    <button onclick="deploy()">Deploy controller</button>
+    <div id="deployStatus" class="status"></div>
+    <pre id="configPreview" style="display:none;"></pre>
+  </section>
+
+  <p class="footer-note">
+    Meteora Narrative LP Agent — Agent Builders Cup.
+    <a href="https://github.com/alemaxxx/meteora-narrative-lp-agent" target="_blank">Source</a>
+  </p>
+</div>
+
+<script>
+// Mirrors conf/controllers/narrative_lp_agent_<profile>.example.yml — kept in sync by
+// hand (documented limitation, see docs/phase5-notes.md). If you change a template,
+// update this object too.
+const RISK_PROFILES = {
+  conservative: {
+    label: "Conservative", desc: "Wider bins, stricter filters, hedge on, exits to stable on downtrend.",
+    total_amount_quote: "50", side: 1, position_width_pct: "1.0", position_offset_pct: "0.01",
+    strategy_type: 0, rebalance_threshold_pct: "2", uptrend_behavior: "hold",
+    downtrend_behavior: "exit_to_stable", min_fee_to_cost_ratio: "2.5",
+    estimated_rebalance_cost_quote: "0.05", stop_loss_pct: "15", hedge_enabled: true,
+    autoswap: true, swap_buffer_pct: "0.01",
+  },
+  moderate: {
+    label: "Moderate", desc: "Balanced width and thresholds, follows trend up, exits to stable on downtrend.",
+    total_amount_quote: "50", side: 1, position_width_pct: "0.5", position_offset_pct: "0.01",
+    strategy_type: 0, rebalance_threshold_pct: "1", uptrend_behavior: "follow_trend",
+    downtrend_behavior: "exit_to_stable", min_fee_to_cost_ratio: "1.5",
+    estimated_rebalance_cost_quote: "0.05", stop_loss_pct: "25", hedge_enabled: false,
+    autoswap: true, swap_buffer_pct: "0.01",
+  },
+  aggressive: {
+    label: "Aggressive", desc: "Tight bins, frequent rebalancing, reopens lower on downtrend, hedge off.",
+    total_amount_quote: "50", side: 1, position_width_pct: "0.25", position_offset_pct: "0.01",
+    strategy_type: 2, rebalance_threshold_pct: "0.5", uptrend_behavior: "follow_trend",
+    downtrend_behavior: "reopen_lower", min_fee_to_cost_ratio: "1.1",
+    estimated_rebalance_cost_quote: "0.05", stop_loss_pct: "35", hedge_enabled: false,
+    autoswap: true, swap_buffer_pct: "0.02",
+  },
+};
+
+const ADVANCED_FIELDS = [
+  ["total_amount_quote", "Total amount (quote asset)", "text"],
+  ["side", "Initial side (1=BUY, 2=SELL, 3=RANGE)", "number"],
+  ["position_width_pct", "Position width %", "text"],
+  ["position_offset_pct", "Position offset %", "text"],
+  ["strategy_type", "Meteora strategy type (0=Spot, 1=Curve, 2=Bid-Ask)", "number"],
+  ["rebalance_threshold_pct", "Rebalance threshold %", "text"],
+  ["min_fee_to_cost_ratio", "Min fee/cost ratio", "text"],
+  ["estimated_rebalance_cost_quote", "Estimated rebalance cost (quote)", "text"],
+  ["stop_loss_pct", "Stop-loss % (blank = off)", "text"],
+  ["swap_buffer_pct", "Autoswap buffer %", "text"],
+];
+
+let selectedProfile = "moderate";
+let customValues = {};
+
+function loadStoredCreds() {
+  document.getElementById("apiUrl").value = localStorage.getItem("nla_api_url") || "http://localhost:8000";
+  document.getElementById("apiUser").value = localStorage.getItem("nla_api_user") || "admin";
+  document.getElementById("apiPass").value = localStorage.getItem("nla_api_pass") || "";
+  document.getElementById("walletAddress").value = localStorage.getItem("nla_wallet") || "";
+  ["apiUrl", "apiUser", "apiPass", "walletAddress"].forEach(id => {
+    document.getElementById(id).addEventListener("input", saveStoredCreds);
+  });
+}
+function saveStoredCreds() {
+  localStorage.setItem("nla_api_url", document.getElementById("apiUrl").value);
+  localStorage.setItem("nla_api_user", document.getElementById("apiUser").value);
+  localStorage.setItem("nla_api_pass", document.getElementById("apiPass").value);
+  localStorage.setItem("nla_wallet", document.getElementById("walletAddress").value);
+}
+
+function renderProfiles() {
+  const container = document.getElementById("profileCards");
+  container.innerHTML = "";
+  Object.entries(RISK_PROFILES).forEach(([key, p]) => {
+    const card = document.createElement("button");
+    card.className = "profile-card" + (key === selectedProfile ? " selected" : "");
+    card.innerHTML = `<div class="name">${p.label}</div><div class="desc">${p.desc}</div>`;
+    card.onclick = () => { selectedProfile = key; customValues = {}; renderProfiles(); renderAdvanced(); };
+    container.appendChild(card);
+  });
+}
+
+function toggleAdvanced() {
+  document.getElementById("advancedPanel").classList.toggle("open");
+}
+
+function renderAdvanced() {
+  const panel = document.getElementById("advancedPanel");
+  const base = RISK_PROFILES[selectedProfile];
+  panel.innerHTML = "";
+  ADVANCED_FIELDS.forEach(([key, label, type]) => {
+    const row = document.createElement("div");
+    const value = customValues[key] !== undefined ? customValues[key] : base[key];
+    row.innerHTML = `<label>${label}</label><input type="${type}" data-key="${key}" value="${value === null ? '' : value}">`;
+    row.querySelector("input").addEventListener("input", (e) => {
+      customValues[key] = e.target.value;
+    });
+    panel.appendChild(row);
+  });
+}
+
+function buildConfig() {
+  const base = { ...RISK_PROFILES[selectedProfile], ...customValues };
+  const pool = document.getElementById("poolAddress").value.trim();
+  const pair = document.getElementById("tradingPair").value.trim();
+  const shortAddr = pool ? pool.slice(0, 8) : "unset";
+  return {
+    id: `narrative_lp_agent_${selectedProfile}_${shortAddr}`,
+    controller_name: "narrative_lp_agent",
+    controller_type: "generic",
+    risk_profile: selectedProfile,
+    connector_name: "solana-mainnet-beta",
+    lp_provider: "meteora/clmm",
+    trading_pair: pair,
+    pool_address: pool,
+    total_amount_quote: base.total_amount_quote,
+    side: Number(base.side),
+    position_width_pct: base.position_width_pct,
+    position_offset_pct: base.position_offset_pct,
+    strategy_type: base.strategy_type === "" ? null : Number(base.strategy_type),
+    rebalance_threshold_pct: base.rebalance_threshold_pct,
+    uptrend_behavior: base.uptrend_behavior,
+    downtrend_behavior: base.downtrend_behavior,
+    min_fee_to_cost_ratio: base.min_fee_to_cost_ratio,
+    estimated_rebalance_cost_quote: base.estimated_rebalance_cost_quote,
+    stop_loss_pct: base.stop_loss_pct === "" ? null : base.stop_loss_pct,
+    hedge_enabled: !!base.hedge_enabled,
+    autoswap: !!base.autoswap,
+    swap_buffer_pct: base.swap_buffer_pct,
+    sell_price_max: null, sell_price_min: null, buy_price_max: null, buy_price_min: null,
+  };
+}
+
+function previewConfig() {
+  const el = document.getElementById("configPreview");
+  el.style.display = "block";
+  el.textContent = JSON.stringify(buildConfig(), null, 2);
+}
+
+function apiCreds() {
+  return {
+    url: document.getElementById("apiUrl").value.replace(/\/$/, ""),
+    user: document.getElementById("apiUser").value,
+    pass: document.getElementById("apiPass").value,
+  };
+}
+
+async function apiRequest(method, endpoint, body) {
+  const { url, user, pass } = apiCreds();
+  const auth = btoa(`${user}:${pass}`);
+  const resp = await fetch(url + endpoint, {
+    method,
+    headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!resp.ok) {
+    throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+  }
+  return resp.json();
+}
+
+async function testConnection() {
+  const statusEl = document.getElementById("connStatus");
+  statusEl.textContent = "Testing…";
+  statusEl.className = "status";
+  try {
+    await apiRequest("GET", "/bot-orchestration/status");
+    statusEl.textContent = "✓ Connected";
+    statusEl.className = "status ok";
+  } catch (e) {
+    statusEl.textContent = "✗ " + e.message + " (CORS must be enabled on your API for browser calls — see docs/phase5-notes.md)";
+    statusEl.className = "status err";
+  }
+}
+
+async function deploy() {
+  const statusEl = document.getElementById("deployStatus");
+  const config = buildConfig();
+  if (!config.trading_pair || !config.pool_address) {
+    statusEl.textContent = "Fill in trading pair and pool address first.";
+    statusEl.className = "status warn";
+    return;
+  }
+  statusEl.textContent = "Registering config…";
+  statusEl.className = "status";
+  try {
+    await apiRequest("POST", `/controllers/configs/${config.id}`, config);
+    statusEl.textContent = "Config registered. Deploying…";
+    const result = await apiRequest("POST", "/bot-orchestration/deploy-v2-controllers", {
+      instance_name: config.id,
+      controllers_config: [config.id],
+      credentials_profile: "master_account",
+      image: "hummingbot/hummingbot:development",
+      headless: true,
+    });
+    statusEl.textContent = "✓ Deployed: " + JSON.stringify(result);
+    statusEl.className = "status ok";
+  } catch (e) {
+    statusEl.textContent = "✗ Deploy failed: " + e.message;
+    statusEl.className = "status err";
+  }
+}
+
+loadStoredCreds();
+renderProfiles();
+renderAdvanced();
+</script>
+</body>
+</html>

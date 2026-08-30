@@ -48,6 +48,9 @@ routines/
   narrative_lp_funnel.py   # bridges Layer 1+2 into a Controller deployment
 scripts/
   ...                      # operational scripts: dry-run, deploy, monitor (Phase 6)
+frontend/
+  index.html                # static, no build step — risk-profile picker + deploy UI
+                             # against the user's OWN Hummingbot API (see docs/wallet-setup.md)
 docs/
   ...                      # research notes, design decisions
 strategy.md                # strategy write-up required by the hackathon submission
@@ -80,7 +83,15 @@ for the LP inventory.
    cross-check), `narrative_lp_funnel.py` (bridges both into a Phase 3 Controller
    deployment, `dry_run=True` by default). **Written, not yet run** — see
    [docs/phase4-notes.md](./docs/phase4-notes.md)
-5. ⬜ Multi-user / connect-wallet layer
+5. 🟡 Multi-user / connect-wallet layer ([frontend/](./frontend), [docs/wallet-setup.md](./docs/wallet-setup.md)) —
+   **custody model corrected before building anything**, see
+   [docs/phase5-notes.md](./docs/phase5-notes.md): Hummingbot Gateway signs
+   autonomously from a key it holds (encrypted), not via live browser co-signing, so
+   "non-custodial" here means each user self-hosts their own Gateway/API — the
+   frontend never asks for a private key and never sends anything to a server this
+   project runs. Verified working locally (profile selection, advanced fields, config
+   preview, graceful connection-failure handling) — not yet tested against a live
+   Hummingbot API.
 6. ⬜ Dry-run / simulation mode + demo video
 
 ## Disclaimer

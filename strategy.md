@@ -91,8 +91,19 @@ accordion — no wall of parameters up front.
 
 ## 6. Multi-user
 
-Any user connects their own wallet (client-side signing) and picks a profile — no
-private key is ever held server-side.
+Any user runs their own Hummingbot Gateway + API instance and imports their wallet
+directly into it — the one place a key is ever entered, encrypted locally by Gateway's
+own passphrase. This project's frontend and routines never hold, transmit, or see a
+private key: the frontend asks only for the user's own API URL/credentials and their
+wallet's *public* address, and calls that API directly from the browser.
+
+This isn't a live client-side-co-signing "Connect Wallet" flow — Gateway signs
+autonomously from the key it holds, which is what makes unattended 48h operation
+possible in the first place; a signature the user has to approve in real time for every
+rebalance can't deliver that. Custody stays with the user by keeping the signer on
+infrastructure *they* run, not by inventing signing Gateway doesn't have. See
+[docs/phase5-notes.md](./docs/phase5-notes.md) for the full reasoning — this replaces an
+earlier, inaccurate draft of this section that implied live browser co-signing.
 
 ## 7. Architecture
 
@@ -139,3 +150,14 @@ worth flagging: the Hummingbot API deploy contract was initially drafted from an
 AI-paraphrased summary and was wrong (full config dicts vs. registered names) until
 checked against the real source — a reminder that summaries are a lead to verify, not a
 citable fact.
+
+**Phase 5 (multi-user) is written, verified locally, not yet run against a live API.**
+[`frontend/index.html`](./frontend/index.html) is a static risk-profile picker + deploy
+UI, and [docs/wallet-setup.md](./docs/wallet-setup.md) covers wallet onboarding. Section
+6 above was rewritten during this phase — the original draft claimed live client-side
+co-signing, which Hummingbot Gateway doesn't actually support; see
+[docs/phase5-notes.md](./docs/phase5-notes.md) for why and what the corrected model is.
+Profile selection, the advanced-fields panel, config preview, and graceful
+connection-failure handling were exercised in a real browser against a local static
+server; a real deploy call against a live Hummingbot API has not been tested — that's
+Phase 6.
