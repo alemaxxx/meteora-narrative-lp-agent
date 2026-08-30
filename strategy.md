@@ -128,3 +128,14 @@ and execute the cross-venue hedge (config field exists, execution doesn't). See
 and [docs/research-phase1-notes.md](./docs/research-phase1-notes.md) for why extending
 `lp_rebalancer` was the right call. Validation happens in Phase 6 (dry-run) — this repo
 has no Hummingbot runtime installed to run it against yet.
+
+**Phase 4 (narrative layer) is written, not yet run.** [`routines/`](./routines)
+implements Layer 1 (`meteora_pool_scanner.py`), Layer 2 (`narrative_check.py`, LunarCrush
++ CryptoPanic 2-of-3 cross-check), and the bridge that fills in a risk profile's
+Controller config per approved pool and deploys it (`narrative_lp_funnel.py`,
+`dry_run=True` by default — deploying real capital is a deliberate, reviewed action, not
+automatic). See [docs/phase4-notes.md](./docs/phase4-notes.md), including one correction
+worth flagging: the Hummingbot API deploy contract was initially drafted from an
+AI-paraphrased summary and was wrong (full config dicts vs. registered names) until
+checked against the real source — a reminder that summaries are a lead to verify, not a
+citable fact.

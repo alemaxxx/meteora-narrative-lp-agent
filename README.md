@@ -43,7 +43,9 @@ conf/
   controllers/            # risk-profile templates (*.example.yml, tracked); filled-in
                            # per-deployment configs are git-ignored
 routines/
-  ...                      # Condor routines: narrative/social signal checks (Phase 4)
+  meteora_pool_scanner.py  # Layer 1: on-chain filter (GeckoTerminal)
+  narrative_check.py       # Layer 2: LunarCrush + CryptoPanic 2-of-3 cross-check
+  narrative_lp_funnel.py   # bridges Layer 1+2 into a Controller deployment
 scripts/
   ...                      # operational scripts: dry-run, deploy, monitor (Phase 6)
 docs/
@@ -73,8 +75,11 @@ for the LP inventory.
    stop-loss, and the 3 risk-profile presets. **Written, not yet run** — see
    [docs/phase3-notes.md](./docs/phase3-notes.md); validation is Phase 6. The on-chain
    filter itself (pool discovery) is Phase 4's job, not this controller's.
-4. ⬜ Narrative layer (Condor Agent — LunarCrush + CryptoPanic, 2-of-3 cross-check) —
-   also owns the on-chain pool-discovery filter that feeds the Phase 3 controller
+4. 🟡 Narrative layer ([routines/](./routines)) — `meteora_pool_scanner.py` (Layer 1,
+   on-chain), `narrative_check.py` (Layer 2, LunarCrush + CryptoPanic 2-of-3
+   cross-check), `narrative_lp_funnel.py` (bridges both into a Phase 3 Controller
+   deployment, `dry_run=True` by default). **Written, not yet run** — see
+   [docs/phase4-notes.md](./docs/phase4-notes.md)
 5. ⬜ Multi-user / connect-wallet layer
 6. ⬜ Dry-run / simulation mode + demo video
 
