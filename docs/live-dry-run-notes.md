@@ -72,8 +72,55 @@ least one of the two providers, since on-chain alone is only 1 of 3 signals. Dec
 (2026-08-30): document this rather than pay for either provider right now. Revisit
 before the final demo video if a genuine 2-of-3 PASS needs to be shown on camera.
 
-## Frontend: next up
+## Frontend: confirmed working end-to-end, including a real deploy attempt
 
-Not yet tested against this live API (Phase 5 only tested it against a local static
-server with no real backend). This stack now provides exactly what was missing —
-tracked as the next step in this same live session.
+Tested against this live API for the first time (Phase 5 only tested it against a local
+static server with no real backend). `Test connection` and `Preview config` both worked
+cleanly — CORS was not an issue against a stock `hummingbot-api` install. UX was also
+reworked mid-session after actually using it live (see phase5-notes.md's "UX
+simplification" section): the technical API-connection step moved from first to last,
+a plain-language summary replaced the raw JSON as the default Deploy view, and the pool
+filter inputs got tucked behind a toggle.
+
+## First real deploy attempt: two findings, one from each side of the stack
+
+Deployed for real (US$8 target, small test wallet, user's own click) against a live
+pool. Two things surfaced that no amount of local/mocked testing could have caught:
+
+**1. `controllers/generic/narrative_lp_agent/__init__.py` was empty — controller
+wouldn't load at all.** First deploy attempt: container came up, then exited
+immediately with `Failed to start strategy v2_with_controllers: No configuration class
+found in the module narrative_lp_agent.` Traced it into the real Hummingbot source
+inside the `hummingbot/hummingbot:development` image itself
+(`strategy/strategy_v2_base.py`'s `load_controller_configs`): the loader imports
+`controllers.<controller_type>.<controller_name>` — the **package** (the directory),
+not the `.py` file inside it — then inspects that module's top-level members for a
+`ControllerConfigBase` subclass. An empty `__init__.py` exposes nothing to inspect.
+Confirmed the fix by reading the real `lp_rebalancer/__init__.py` shipped in the same
+image: it re-exports from the file with a relative import (`from .lp_rebalancer import
+LPRebalancer, LPRebalancerConfig`), specifically because this same package tree gets
+imported under two different root paths depending on context (`controllers.*` inside a
+bot container vs. `bots.controllers.*` inside hummingbot-api itself). Applied the same
+pattern. Second attempt: container stayed up.
+
+**2. `total_amount_quote` is denominated in the pair's quote token, never literally
+dollars — and the bot correctly refused rather than silently doing something wrong.**
+With the loader fixed, the bot started, read `total_amount_quote: 8` for a `PINK-SOL`
+pair, and understood it as **8 SOL** (~$800+ at the time) — not $8 — because SOL is
+that pair's quote token (the second symbol in the pair, same convention `lp_rebalancer`
+documents: "amount always in quote asset"). The wallet only had 0.2 SOL, so every
+attempt failed with `INSUFFICIENT_BALANCE` from Gateway, confirmed via `docker logs` —
+**no transaction was ever submitted on-chain, no funds moved** (verified against
+`/portfolio/state` before and after: 0.2 SOL + 10.5 USDC, unchanged). What did need
+manual intervention: `lp_rebalancer`'s inherited retry-on-failure logic kept trying
+every ~5 seconds with no backoff or attempt cap, so the bot was stopped by hand
+(`/bot-orchestration/stop-bot`, then a direct `docker stop` since the API call didn't
+take effect immediately) rather than left to keep hammering Gateway/RPC indefinitely.
+Fixed in the frontend, not the controller: the deploy summary now shows the amount in
+the pair's actual quote token, and shows an explicit warning when that token isn't a
+recognized stablecoin, including the sharper point that "convert to stable" on a
+non-stablecoin quote still leaves the position holding a volatile asset, not cash.
+
+Both fixes are pushed; a real deploy with the corrected amount (on a USDC-quoted pair,
+where the dollar figure is actually a dollar figure) hasn't been attempted yet in this
+session — natural next step.
