@@ -102,7 +102,7 @@
   .profile-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   .profile-card .name { font-weight: 700; margin-bottom: 4px; }
   .profile-card .desc { font-size: 12px; color: var(--text-dim); }
-  .advanced-toggle {
+  .link-toggle {
     background: none;
     border: none;
     color: var(--accent);
@@ -111,9 +111,9 @@
     margin-top: 14px;
     cursor: pointer;
   }
-  .advanced { display: none; margin-top: 14px; border-top: 1px solid var(--panel-border); padding-top: 14px; }
-  .advanced.open { display: block; }
-  .advanced .row { margin-bottom: 4px; }
+  .collapsible { display: none; margin-top: 14px; border-top: 1px solid var(--panel-border); padding-top: 14px; }
+  .collapsible.open { display: block; }
+  .collapsible .row { margin-bottom: 4px; }
   .field-note { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
   pre {
     background: var(--bg);
@@ -140,26 +140,89 @@
   .pool-row:hover { background: rgba(110, 231, 183, 0.06); }
   .pool-row.selected { background: rgba(110, 231, 183, 0.14); }
   .pool-row.selected td:first-child { color: var(--accent); font-weight: 600; }
+  .summary-card {
+    background: var(--bg);
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    padding: 16px;
+    font-size: 14px;
+  }
+  .summary-card p { margin: 0 0 10px; }
+  .summary-card p:last-child { margin-bottom: 0; }
+  .summary-card b { color: var(--accent); }
+  .summary-empty { color: var(--text-dim); font-size: 13px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Meteora Narrative LP Agent</h1>
-  <p class="subtitle">Connect your own infrastructure, pick a risk profile, deploy.</p>
+  <p class="subtitle">Pick a risk profile, pick a pool, deploy.</p>
 
   <div class="banner">
     <b>How "connect wallet" actually works here:</b> this page never asks for a private
     key or seed phrase, and there is no server run by this project that your wallet or
     funds ever touch. You run your own Hummingbot Gateway + API instance, import your
     wallet into <em>it</em> (encrypted locally, on your machine) — see
-    <a href="../docs/wallet-setup.md" target="_blank">docs/wallet-setup.md</a> — and this
-    page only talks to <em>your own</em> API URL, directly from your browser, to register
-    and deploy the controller config below.
+    <a href="../docs/wallet-setup.md" target="_blank">docs/wallet-setup.md</a>.
   </div>
 
   <section>
-    <h2>1 · Your Hummingbot API</h2>
-    <label for="apiUrl">API URL</label>
+    <h2>1 · Risk profile</h2>
+    <div class="profiles" id="profileCards"></div>
+    <button class="link-toggle" onclick="toggleCollapsible('advancedPanel')">⚙ Advanced (customize every field) ▾</button>
+    <div class="collapsible" id="advancedPanel"></div>
+  </section>
+
+  <section>
+    <h2>2 · Pick a pool</h2>
+    <div class="field-note" style="margin-bottom:10px;">
+      Fetched live, directly from your browser, from Meteora's own DLMM pools API —
+      Layer 1 of the entry funnel. Filters default from your risk profile above; click a
+      pool below to select it. This is Layer 1 (on-chain) only — the narrative
+      cross-check (Layer 2) still runs server-side, not from this page.
+    </div>
+    <div style="margin-bottom:10px;">
+      <button class="secondary" onclick="loadPools()">Refresh now</button>
+      <span id="poolsStatus" class="status"></span>
+    </div>
+    <div class="pool-table-wrap">
+      <table class="pool-table">
+        <thead>
+          <tr><th>Pool</th><th>Vol 24h</th><th>TVL</th><th>V/T</th><th>MCap</th><th>Age</th></tr>
+        </thead>
+        <tbody id="poolsTableBody"></tbody>
+      </table>
+    </div>
+    <button class="link-toggle" onclick="toggleCollapsible('poolAdvanced')">⚙ Tune filters / pick manually ▾</button>
+    <div class="collapsible" id="poolAdvanced">
+      <div class="pool-filters" id="poolFilterInputs"></div>
+      <div class="field-note" style="margin:14px 0 4px;">Or fill in a pool manually:</div>
+      <div class="row">
+        <div>
+          <label for="tradingPair">Trading pair</label>
+          <input type="text" id="tradingPair" placeholder="SOME-USDC">
+        </div>
+        <div>
+          <label for="poolAddress">Pool address</label>
+          <input type="text" id="poolAddress" placeholder="Meteora DLMM pool address">
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3 · Your wallet</h2>
+    <label for="walletAddress">Public wallet address (Solana)</label>
+    <input type="text" id="walletAddress" placeholder="already imported into your own Gateway — paste the PUBLIC address here, never a private key">
+    <div class="field-note">
+      For display/verification only — this page doesn't use it to sign anything. Your
+      Gateway instance signs using the key you imported directly into it.
+    </div>
+  </section>
+
+  <section>
+    <h2>4 · Connect your bot</h2>
+    <label for="apiUrl">Your Hummingbot API URL</label>
     <input type="text" id="apiUrl" placeholder="http://localhost:8000">
     <div class="row">
       <div>
@@ -182,65 +245,16 @@
   </section>
 
   <section>
-    <h2>2 · Your wallet</h2>
-    <label for="walletAddress">Public wallet address (Solana)</label>
-    <input type="text" id="walletAddress" placeholder="already imported into your own Gateway — paste the PUBLIC address here, never a private key">
-    <div class="field-note">
-      For display/verification only — this page doesn't use it to sign anything. Your
-      Gateway instance signs using the key you imported directly into it.
-    </div>
-  </section>
-
-  <section>
-    <h2>3 · Risk profile</h2>
-    <div class="profiles" id="profileCards"></div>
-    <button class="advanced-toggle" onclick="toggleAdvanced()">⚙ Advanced (customize every field) ▾</button>
-    <div class="advanced" id="advancedPanel"></div>
-  </section>
-
-  <section>
-    <h2>4 · New pools</h2>
-    <div class="field-note" style="margin-bottom:10px;">
-      Fetched live, directly from your browser, from Meteora's own DLMM pools API —
-      Layer 1 of the entry funnel (<code>routines/meteora_pool_scanner.py</code>), ported
-      to JS here so this needs no backend of ours. Filters default from the selected risk
-      profile; click a pool to fill in the fields below. This is Layer 1 (on-chain) only —
-      the narrative cross-check (Layer 2, LunarCrush + CryptoPanic) still runs server-side
-      via <code>routines/narrative_lp_funnel.py</code>, not from this page.
-    </div>
-    <div class="pool-filters" id="poolFilterInputs"></div>
-    <div style="margin:10px 0;">
-      <button class="secondary" onclick="loadPools()">Refresh now</button>
-      <span id="poolsStatus" class="status"></span>
-    </div>
-    <div class="pool-table-wrap">
-      <table class="pool-table">
-        <thead>
-          <tr><th>Pool</th><th>Vol 24h</th><th>TVL</th><th>V/T</th><th>MCap</th><th>Age</th></tr>
-        </thead>
-        <tbody id="poolsTableBody"></tbody>
-      </table>
-    </div>
-
-    <div class="field-note" style="margin:14px 0 4px;">Or fill in manually / override the selection above:</div>
-    <div class="row">
-      <div>
-        <label for="tradingPair">Trading pair</label>
-        <input type="text" id="tradingPair" placeholder="SOME-USDC">
-      </div>
-      <div>
-        <label for="poolAddress">Pool address</label>
-        <input type="text" id="poolAddress" placeholder="Meteora DLMM pool address">
-      </div>
-    </div>
-  </section>
-
-  <section>
     <h2>5 · Deploy</h2>
-    <button class="secondary" onclick="previewConfig()">Preview config</button>
-    <button onclick="deploy()">Deploy controller</button>
+    <div class="summary-card" id="summaryCard"></div>
+    <div style="margin-top:14px;">
+      <button onclick="deploy()">Deploy controller</button>
+    </div>
     <div id="deployStatus" class="status"></div>
-    <pre id="configPreview" style="display:none;"></pre>
+    <button class="link-toggle" onclick="toggleCollapsible('configPreviewWrap')">Show technical config (JSON) ▾</button>
+    <div class="collapsible" id="configPreviewWrap">
+      <pre id="configPreview"></pre>
+    </div>
   </section>
 
   <p class="footer-note">
@@ -292,6 +306,10 @@ const POOL_REFRESH_MS = 30000;
 let poolRefreshTimer = null;
 let poolFilterOverrides = {};
 let selectedPoolAddress = null;
+
+function toggleCollapsible(id) {
+  document.getElementById(id).classList.toggle("open");
+}
 
 function currentScannerFilters() {
   return { ...RISK_PROFILES[selectedProfile].scanner, ...poolFilterOverrides };
@@ -414,6 +432,7 @@ function selectPool(p) {
   document.getElementById("tradingPair").value = base && quote ? `${base}-${quote}` : p.name;
   document.getElementById("poolAddress").value = p.address;
   loadPools(); // re-render to highlight the newly selected row
+  renderSummary();
 }
 
 function startPoolPolling() {
@@ -469,13 +488,10 @@ function renderProfiles() {
       renderAdvanced();
       renderPoolFilterInputs();
       loadPools();
+      renderSummary();
     };
     container.appendChild(card);
   });
-}
-
-function toggleAdvanced() {
-  document.getElementById("advancedPanel").classList.toggle("open");
 }
 
 function renderAdvanced() {
@@ -488,6 +504,7 @@ function renderAdvanced() {
     row.innerHTML = `<label>${label}</label><input type="${type}" data-key="${key}" value="${value === null ? '' : value}">`;
     row.querySelector("input").addEventListener("input", (e) => {
       customValues[key] = e.target.value;
+      renderSummary();
     });
     panel.appendChild(row);
   });
@@ -525,10 +542,34 @@ function buildConfig() {
   };
 }
 
-function previewConfig() {
-  const el = document.getElementById("configPreview");
-  el.style.display = "block";
-  el.textContent = JSON.stringify(buildConfig(), null, 2);
+function renderSummary() {
+  const config = buildConfig();
+  const card = document.getElementById("summaryCard");
+
+  if (!config.trading_pair || !config.pool_address) {
+    card.innerHTML = '<p class="summary-empty">Pick a pool in step 2 to see what this would do.</p>';
+    document.getElementById("configPreview").textContent = "";
+    return;
+  }
+
+  const profileLabel = RISK_PROFILES[selectedProfile].label;
+  const up = config.uptrend_behavior === "hold"
+    ? "hold steady — it won't chase the price up"
+    : "follow the trend and reopen higher";
+  const down = config.downtrend_behavior === "exit_to_stable"
+    ? "convert to stable (USDC) to avoid further loss"
+    : "reopen lower — more fee income, more exposure";
+  const hedge = config.hedge_enabled ? "on" : "off";
+  const stopLoss = config.stop_loss_pct ? `${config.stop_loss_pct}%` : "off";
+
+  card.innerHTML = `
+    <p><b>${profileLabel}</b> strategy on <b>${config.trading_pair}</b>, using <b>$${config.total_amount_quote}</b>.</p>
+    <p>If price moves <b>above</b> the range, it will ${up}.</p>
+    <p>If price moves <b>below</b> the range, it will ${down}.</p>
+    <p>Stop-loss: <b>${stopLoss}</b>. Cross-venue hedge: <b>${hedge}</b>.</p>
+  `;
+
+  document.getElementById("configPreview").textContent = JSON.stringify(config, null, 2);
 }
 
 function apiCreds() {
@@ -571,7 +612,7 @@ async function deploy() {
   const statusEl = document.getElementById("deployStatus");
   const config = buildConfig();
   if (!config.trading_pair || !config.pool_address) {
-    statusEl.textContent = "Fill in trading pair and pool address first.";
+    statusEl.textContent = "Pick a pool in step 2 first.";
     statusEl.className = "status warn";
     return;
   }
@@ -595,11 +636,15 @@ async function deploy() {
   }
 }
 
+document.getElementById("tradingPair").addEventListener("input", renderSummary);
+document.getElementById("poolAddress").addEventListener("input", renderSummary);
+
 loadStoredCreds();
 renderProfiles();
 renderAdvanced();
 renderPoolFilterInputs();
 startPoolPolling();
+renderSummary();
 </script>
 </body>
 </html>

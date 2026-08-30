@@ -76,7 +76,39 @@ inaccurate framing.
   YAML (or vice versa) instead of maintaining both.
 - **CORS.** A browser calling a different-origin API needs that API to allow it. Not
   configured by this repo (it's the user's own API deployment) — flagged in
-  `docs/wallet-setup.md` rather than silently left as a mystery failure.
+  `docs/wallet-setup.md` rather than silently left as a mystery failure. In practice,
+  the live dry-run session found `hummingbot-api` allows it out of the box — no
+  workaround needed against a stock install.
+
+## UX simplification (same day, after using the page live)
+
+Walking through an actual live deploy surfaced that the page wasn't following its own
+design goal ("simple screen, don't expose every parameter up front" — strategy.md §5).
+Reworked before the live deploy test:
+
+- **Reordered**: risk profile → pool → wallet → API connection → deploy. The technical
+  self-hosting step ("Your Hummingbot API") used to be section 1, the first thing a
+  visitor saw; it's now section 4, right before it's actually needed.
+- **Plain-language summary replaces the raw JSON as the default view** in the Deploy
+  section ("Moderate strategy on SOL-USDC, using $50. If price moves above the range, it
+  will follow the trend..."), generated from the same `buildConfig()` the deploy call
+  itself uses — so it can't drift out of sync with what's actually sent. The JSON is
+  still there, behind a "Show technical config" toggle.
+- **The 4 pool-filter number inputs are no longer shown by default** — tucked behind a
+  "Tune filters / pick manually" toggle alongside the trading-pair/pool-address manual
+  override fields.
+
+Considered and explicitly deferred: a richer pool detail view (candlestick chart,
+liquidity-distribution-by-bin visualization) matching Meteora's own DLMM UI. Would need
+a new OHLCV data source (the pools API used here has no candle history) and a charting
+library — real scope, and given LunarCrush/CryptoPanic both turned out to gate API
+access behind a paid plan today, not something to assume is free without checking
+first. More importantly, it pulls the opposite direction from the simplification above:
+this page's whole pitch is that the Layer 1/Layer 2 funnel already picked the pool, so
+the user shouldn't need to read a chart to trust it. A lighter version — reusing the
+ASCII-style range visualization the Phase 3 controller's `to_format_status()` already
+renders, plus a link out to Meteora's or Solscan's own UI for anyone who wants the full
+chart — is the better fit if this gets built later.
 
 ## Verification status
 
