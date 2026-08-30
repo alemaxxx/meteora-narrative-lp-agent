@@ -121,6 +121,24 @@ the pair's actual quote token, and shows an explicit warning when that token isn
 recognized stablecoin, including the sharper point that "convert to stable" on a
 non-stablecoin quote still leaves the position holding a volatile asset, not cash.
 
-Both fixes are pushed; a real deploy with the corrected amount (on a USDC-quoted pair,
-where the dollar figure is actually a dollar figure) hasn't been attempted yet in this
-session — natural next step.
+Both fixes are pushed. Third attempt (COT-SOL, 0.03 SOL, a deliberately small amount
+after the warning above did its job): **succeeded**. Confirmed independently on Solscan,
+outside this project's own stack entirely — signer matched the test wallet, "Position:
+Open" + "Liquidity: Add" on the real Meteora DLMM Program
+(`LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo`), `Initialize_position` +
+`Add_liquidity_by_strategy2` instructions, timestamp matching the bot's own log. This is
+the Meteora track's core requirement — "provide liquidity... on Meteora pools (DLMM)...
+via the Hummingbot Gateway connector" — demonstrated for real, not simulated.
+
+## Finding #4: position width has no relationship to a specific pool's bin coarseness
+
+The opened position looked wrong in Meteora's own UI: "Total Bins: 2" — the practical
+minimum. Root cause: `position_width_pct` (0.5%, the Moderate profile default) and
+COT-SOL's `bin_step` (100) combine to just under 1 bin's worth of width per side, so
+Meteora rounded up to the minimum viable range. The same width % lands on wildly
+different bin counts depending on each pool's `bin_step`, which a risk-profile preset
+has no way to anticipate. Fixed in the frontend: a "Number of bins" control appears once
+a pool is selected (the Meteora pools API already returns `pool_config.bin_step`, it
+just wasn't being read), computing `position_width_pct = numBins * bin_step / 100` —
+labeled as a linear approximation, not an exact match to DLMM's actual compounding bin
+pricing. Verified live against a real pool's real bin_step before pushing.
