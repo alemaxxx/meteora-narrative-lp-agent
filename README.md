@@ -51,9 +51,12 @@ scripts/
 frontend/
   index.html                # static, no build step — risk-profile picker + deploy UI
                              # against the user's OWN Hummingbot API (see docs/wallet-setup.md)
+tests/
+  ...                      # 37 tests covering the logic this repo added — see tests/README.md
 docs/
   ...                      # research notes, design decisions
 strategy.md                # strategy write-up required by the hackathon submission
+requirements.txt / requirements-dev.txt
 ```
 
 ## Compliance with the Meteora track criteria
@@ -92,7 +95,24 @@ for the LP inventory.
    project runs. Verified working locally (profile selection, advanced fields, config
    preview, graceful connection-failure handling) — not yet tested against a live
    Hummingbot API.
-6. ⬜ Dry-run / simulation mode + demo video
+6. 🟡 Dry-run / simulation mode ([tests/](./tests), [docs/phase6-notes.md](./docs/phase6-notes.md)) —
+   37 tests passing, 2 real bugs found and fixed by actually running things (a dead
+   GeckoTerminal DEX id + a missing TVL floor letting degenerate ratios dominate the
+   scanner; a pair-parsing regex that silently skipped every real pool name). Demo
+   video and full live-API validation are yours to do — see
+   [docs/dry-run-runbook.md](./docs/dry-run-runbook.md).
+
+## Running the tests
+
+```bash
+python -m venv .venv
+.venv/Scripts/pip install -r requirements-dev.txt   # .venv/bin/pip on macOS/Linux
+.venv/Scripts/python -m pytest tests/ -v
+```
+
+37 tests, no live Hummingbot/Condor runtime required — see [tests/README.md](./tests/README.md)
+for what they do and don't cover, and [docs/phase6-notes.md](./docs/phase6-notes.md) for
+two real bugs this suite (and the live checks that led to it) caught.
 
 ## Disclaimer
 

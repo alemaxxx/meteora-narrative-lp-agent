@@ -1,10 +1,23 @@
 """
 Layer 1 of the entry funnel (strategy.md §3): cheap on-chain filter, run against
 every new Meteora DLMM pool before the expensive narrative check (narrative_check.py)
-ever runs. Modeled directly on Condor's own `solana_pool_scanner.py` reference routine
-(see docs/research-phase1-notes.md) — same GeckoTerminal data source and DEX id list,
-narrowed to Meteora and extended with the two filters that routine didn't have: market
-cap range and minimum pool age (dwell time).
+ever runs.
+
+REWRITTEN in Phase 6 after live-testing the original GeckoTerminal-based version
+(see docs/phase6-notes.md for the full story): GeckoTerminal's Solana DEX id list has
+no "meteora-dlmm" id (confirmed live — 404; the ids that actually exist are "meteora",
+"meteora-dbc", "meteora-damm-v2"), and the plain "meteora" id doesn't reliably
+distinguish DLMM from legacy pools. Meteora publishes its own DLMM-specific pools API
+with server-side filtering — verified live, response shape confirmed by inspecting a
+real request, not assumed:
+
+    GET https://dlmm.datapi.meteora.ag/pools
+    ?page=1&page_size=<n>&sort_by=volume_24h:desc
+    &filter_by=is_blacklisted=false&&tvl><n>&&volume_24h><n>
+
+This is both more correct (DLMM only, no ambiguity) and cheaper (server-side volume/TVL
+filtering means far fewer pools to fetch and filter client-side, vs. fanning out
+GeckoTerminal page requests per DEX id).
 
 Exposes `scan()` as a plain importable function, separate from `run()`, so
 narrative_lp_funnel.py can call it directly without going through the Telegram-report
@@ -13,109 +26,111 @@ side effects `run()` produces when used standalone from chat.
 
 CATEGORY = "Meteora LP Agent"
 
-import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+import httpx
 from pydantic import BaseModel, Field
 from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
 
-NETWORK = "solana"
-DEX_IDS = ["meteora-dlmm", "meteora"]
-PAGES_DEFAULT = 3
+POOLS_URL = "https://dlmm.datapi.meteora.ag/pools"
+HTTP_TIMEOUT = 15.0
+MAX_PAGE_SIZE = 1000  # API-documented ceiling
 
 
 class Config(BaseModel):
-    """Scan new Meteora DLMM pools on Solana via GeckoTerminal and apply the Layer 1
+    """Scan new Meteora DLMM pools via Meteora's own pools API and apply the Layer 1
     on-chain filter (volume, Volume/TVL ratio, market-cap range, minimum dwell time)."""
 
     min_volume_24h_quote: float = Field(default=10_000, description="Min 24h volume (USD)")
+    min_tvl_quote: float = Field(
+        default=1_000,
+        description="Min TVL (USD) — a sanity floor, not just a quality bar: without it, "
+                    "a near-zero-TVL pool with stale/leftover volume produces a Volume/TVL "
+                    "ratio in the billions and dominates the ranking (caught live in Phase 6 "
+                    "— see docs/phase6-notes.md).",
+    )
     min_volume_tvl_ratio: float = Field(default=0.1, description="Min 24h volume / TVL ratio")
-    market_cap_min: Optional[float] = Field(default=None, description="Min token market cap / FDV (USD), null = no floor")
-    market_cap_max: Optional[float] = Field(default=None, description="Max token market cap / FDV (USD), null = no ceiling")
+    market_cap_min: Optional[float] = Field(default=None, description="Min base-token market cap (USD), null = no floor")
+    market_cap_max: Optional[float] = Field(default=None, description="Max base-token market cap (USD), null = no ceiling")
     min_dwell_time_seconds: int = Field(default=1800, description="Minimum pool age before it's eligible")
     top_n: int = Field(default=15, description="Number of pools to return")
     search_token: Optional[str] = Field(default=None, description="Filter pools containing this token symbol")
-    pages: int = Field(default=PAGES_DEFAULT, description="Pages to fetch per DEX id (20 pools/page)")
+    fetch_page_size: int = Field(default=200, description="Pools to fetch server-side per request (max 1000)")
 
 
-async def _fetch_pools_page(dex_id: str, page: int) -> list[dict]:
-    from condor.pool_data import gecko_request
+def _build_filter(config: Config) -> str:
+    """Server-side pre-filter (volume/TVL floor only — ratio and market cap need the
+    raw numbers and are applied client-side after fetch)."""
+    parts = ["is_blacklisted=false"]
+    if config.min_volume_24h_quote > 0:
+        parts.append(f"volume_24h>{config.min_volume_24h_quote}")
+    if config.min_tvl_quote > 0:
+        parts.append(f"tvl>{config.min_tvl_quote}")
+    return "&&".join(parts)
 
+
+async def _fetch_pools(config: Config) -> list[dict]:
+    params = {
+        "page": "1",
+        "page_size": str(min(config.fetch_page_size, MAX_PAGE_SIZE)),
+        "sort_by": "volume_24h:desc",
+        "filter_by": _build_filter(config),
+    }
+    if config.search_token:
+        params["query"] = config.search_token
     try:
-        body = await gecko_request(
-            "GET",
-            f"networks/{NETWORK}/dexes/{dex_id}/pools",
-            params={"page": str(page)},
-        )
-        return body.get("data", [])
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+            resp = await client.get(POOLS_URL, params=params)
+        resp.raise_for_status()
+        return resp.json().get("data", [])
     except Exception as e:
-        logger.warning(f"GeckoTerminal {dex_id} p{page} failed: {e}")
+        logger.warning(f"Meteora pools API request failed: {e}")
         return []
 
 
-async def _fetch_all_pools(pages: int) -> list[dict]:
-    tasks = [_fetch_pools_page(dex_id, page) for dex_id in DEX_IDS for page in range(1, pages + 1)]
-    results = await asyncio.gather(*tasks)
-    pools = []
-    for batch in results:
-        pools.extend(batch)
-    return pools
-
-
-def _dwell_seconds(created_at: Optional[str]) -> Optional[float]:
-    """Seconds since `pool_created_at`. None if GeckoTerminal didn't return one for
-    this pool — treated as "age unknown", not as "brand new", by the caller."""
-    if not created_at:
+def _dwell_seconds(created_at_ms: Optional[int]) -> Optional[float]:
+    """Seconds since `created_at` (epoch milliseconds — confirmed by inspecting a live
+    response; NOT an ISO string). None if missing."""
+    if not created_at_ms:
         return None
     try:
-        created = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        created = datetime.fromtimestamp(created_at_ms / 1000, tz=timezone.utc)
         return (datetime.now(timezone.utc) - created).total_seconds()
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OSError):
         return None
 
 
 def _parse_pool(raw: dict) -> Optional[dict]:
-    attr = raw.get("attributes", {})
-    name = attr.get("name", "")
-    volume_24h = float(attr.get("volume_usd", {}).get("h24", 0) or 0)
-    tvl = float(attr.get("reserve_in_usd", 0) or 0)
+    volume_24h = float((raw.get("volume") or {}).get("24h", 0) or 0)
+    tvl = float(raw.get("tvl", 0) or 0)
     vol_tvl_ratio = (volume_24h / tvl) if tvl > 0 else 0
 
-    # GeckoTerminal reports market_cap_usd only for tokens it has verified as
-    # circulating-supply-accurate; fdv_usd (fully diluted valuation) is far more
-    # consistently populated for brand-new tokens, so it's the fallback proxy.
-    # NOTE: this proxy is best-effort — verify against live GeckoTerminal responses
-    # in Phase 6 before trusting it for real capital decisions.
-    market_cap = attr.get("market_cap_usd")
-    market_cap = float(market_cap) if market_cap else None
-    if market_cap is None:
-        fdv = attr.get("fdv_usd")
-        market_cap = float(fdv) if fdv else None
-
-    dwell = _dwell_seconds(attr.get("pool_created_at"))
-
-    dex_rel = raw.get("relationships", {}).get("dex", {}).get("data", {})
-    dex_id = dex_rel.get("id", "unknown") if dex_rel else "unknown"
+    # token_x is the base token in this API's `name` ("BASE-QUOTE") and market_cap
+    # convention, confirmed on live SOL-USDC / TRUMP-USDC responses.
+    token_x = raw.get("token_x") or {}
+    market_cap = token_x.get("market_cap")
+    market_cap = float(market_cap) if market_cap is not None else None
 
     return {
-        "name": name,
-        "dex_id": dex_id,
+        "name": raw.get("name", ""),
         "volume_24h": volume_24h,
         "tvl": tvl,
         "vol_tvl_ratio": vol_tvl_ratio,
         "market_cap": market_cap,
-        "dwell_seconds": dwell,
-        "base_price": attr.get("base_token_price_usd", "?"),
-        "address": attr.get("address", ""),
+        "dwell_seconds": _dwell_seconds(raw.get("created_at")),
+        "base_price": raw.get("current_price", "?"),
+        "address": raw.get("address", ""),
     }
 
 
 def _passes_filters(p: dict, config: Config) -> bool:
     if p["volume_24h"] < config.min_volume_24h_quote:
+        return False
+    if p["tvl"] < config.min_tvl_quote:
         return False
     if p["vol_tvl_ratio"] < config.min_volume_tvl_ratio:
         return False
@@ -131,14 +146,11 @@ def _passes_filters(p: dict, config: Config) -> bool:
 
 
 async def scan(config: Config) -> list[dict]:
-    """Pure fetch-and-filter, importable by narrative_lp_funnel.py. Returns candidate
-    pools sorted by Volume/TVL ratio (highest first), already deduplicated by address."""
-    raw_pools = await _fetch_all_pools(config.pages)
+    """Fetch (server-side pre-filtered by volume) and apply the remaining client-side
+    filters. Importable by narrative_lp_funnel.py. Returns candidates sorted by
+    Volume/TVL ratio (highest first), deduplicated by address."""
+    raw_pools = await _fetch_pools(config)
     all_pools = [p for raw in raw_pools if (p := _parse_pool(raw))]
-
-    if config.search_token:
-        token = config.search_token.upper()
-        all_pools = [p for p in all_pools if token in p["name"].upper()]
 
     seen = set()
     unique = []
@@ -165,15 +177,15 @@ def _fmt_usd(val: Optional[float]) -> str:
 async def run(config: Config, context: ContextTypes.DEFAULT_TYPE) -> str:
     from routines.base import RoutineResult
 
-    raw_pools = await _fetch_all_pools(config.pages)
-    total_scanned = len({p["address"] for raw in raw_pools if (p := _parse_pool(raw)) and p["address"]})
+    raw_pools = await _fetch_pools(config)
+    total_fetched = len({p["address"] for raw in raw_pools if (p := _parse_pool(raw)) and p["address"]})
 
     top = await scan(config)
 
     if not top:
         return "No Meteora DLMM pools passed the Layer 1 on-chain filter."
 
-    lines = [f"Meteora Pool Scanner (Layer 1) — {len(top)} pools passed filters (of {total_scanned} scanned)\n"]
+    lines = [f"Meteora Pool Scanner (Layer 1) — {len(top)} pools passed filters (of {total_fetched} fetched)\n"]
     for i, p in enumerate(top, 1):
         dwell_h = (p["dwell_seconds"] or 0) / 3600
         lines.append(
@@ -191,7 +203,7 @@ async def run(config: Config, context: ContextTypes.DEFAULT_TYPE) -> str:
         builder = ReportBuilder("Meteora Pool Scanner (Layer 1)")
         builder.source("routine", "meteora_pool_scanner").tags(["meteora", "solana", "dlmm", "narrative-lp-agent"])
         builder.markdown(
-            f"Scanned {total_scanned} Meteora DLMM pools. {len(top)} passed the on-chain "
+            f"Fetched {total_fetched} Meteora DLMM pools. {len(top)} passed the on-chain "
             f"filter (vol >= {_fmt_usd(config.min_volume_24h_quote)}, V/T >= "
             f"{config.min_volume_tvl_ratio}x, dwell >= {config.min_dwell_time_seconds}s)."
         )

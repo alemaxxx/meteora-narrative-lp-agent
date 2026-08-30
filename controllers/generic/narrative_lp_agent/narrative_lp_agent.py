@@ -72,6 +72,14 @@ class NarrativeLPAgentConfig(LPRebalancerConfig):
         description="[Enforced by the Phase 4 discovery routine, not this controller] "
                     "Minimum 24h volume in quote asset for a pool to be eligible."
     )
+    min_tvl_quote: Decimal = Field(
+        default=Decimal("1000"),
+        description="[Enforced by the Phase 4 discovery routine, not this controller] "
+                    "Minimum pool TVL — a sanity floor, not just a quality bar: without "
+                    "it a near-zero-TVL pool can produce a Volume/TVL ratio in the "
+                    "billions and dominate ranking by that metric (caught live in "
+                    "Phase 6 — see docs/phase6-notes.md)."
+    )
     min_volume_tvl_ratio: Decimal = Field(
         default=Decimal("0.1"),
         description="[Enforced by the Phase 4 discovery routine] Minimum 24h volume / TVL ratio."

@@ -161,3 +161,17 @@ Profile selection, the advanced-fields panel, config preview, and graceful
 connection-failure handling were exercised in a real browser against a local static
 server; a real deploy call against a live Hummingbot API has not been tested — that's
 Phase 6.
+
+**Phase 6 (dry-run) is done for what this environment can actually validate.** 37 tests
+pass ([tests/](./tests), [docs/phase6-notes.md](./docs/phase6-notes.md)), and running
+them — plus live calls to Meteora's and GeckoTerminal's public APIs — caught two real
+bugs before they could reach a live deployment: GeckoTerminal's Meteora DLMM DEX id
+doesn't exist (404), which led to rewriting the Layer 1 scanner around Meteora's own
+DLMM-specific pools API instead; and that rewrite's richer data surfaced a missing TVL
+floor letting near-zero-TVL pools produce nonsensical Volume/TVL ratios that dominated
+the ranking. A third bug — the pair-parsing regex silently rejecting every real
+`"BASE-QUOTE"` pool name — was caught by the test suite itself. All three are fixed, with
+regression tests. What's left needs a live Hummingbot/Condor runtime and a funded
+wallet, neither of which exist in this environment — see
+[docs/dry-run-runbook.md](./docs/dry-run-runbook.md) for the checklist, ending with the
+hackathon's required demo video.

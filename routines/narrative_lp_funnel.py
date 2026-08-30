@@ -63,11 +63,20 @@ def _load_profile_template(risk_profile: str) -> dict:
 
 
 def _parse_pair_from_name(name: str) -> tuple[Optional[str], Optional[str]]:
-    """GeckoTerminal pool names look like 'SOME / USDC 0.3%'. Best-effort split into
-    (base, quote) — returns (None, None) if the shape doesn't match, so the caller can
-    skip a pool it can't confidently parse rather than build a bad trading pair."""
+    """Meteora's own pools API (routines/meteora_pool_scanner.py, since the Phase 6
+    rewrite) returns plain 'BASE-QUOTE' names, e.g. 'SOL-USDC' — no spaces around the
+    hyphen and no trailing fee percentage. The fee-suffix strip and '/'-delimiter
+    handling are kept for robustness against other sources, but the hyphen pattern
+    below must NOT require surrounding whitespace, or every real pool name from the
+    current data source fails to parse (caught live in Phase 6 — every candidate was
+    silently skipped until this was fixed; see docs/phase6-notes.md and the regression
+    test in tests/test_narrative_lp_funnel.py).
+
+    Best-effort split into (base, quote) — returns (None, None) if the shape doesn't
+    match, so the caller can skip a pool it can't confidently parse rather than build a
+    bad trading pair."""
     cleaned = re.sub(r"\s*\d+(\.\d+)?%\s*$", "", name).strip()
-    parts = re.split(r"\s*/\s*|\s+-\s+", cleaned)
+    parts = re.split(r"\s*/\s*|\s*-\s*", cleaned)
     if len(parts) != 2:
         return None, None
     return parts[0].strip(), parts[1].strip()
@@ -136,6 +145,7 @@ async def run(config: Config, context: ContextTypes.DEFAULT_TYPE) -> str:
 
     scanner_config = ScannerConfig(
         min_volume_24h_quote=float(template["min_volume_24h_quote"]),
+        min_tvl_quote=float(template.get("min_tvl_quote", 1000)),
         min_volume_tvl_ratio=float(template["min_volume_tvl_ratio"]),
         market_cap_min=float(template["market_cap_min"]) if template.get("market_cap_min") else None,
         market_cap_max=float(template["market_cap_max"]) if template.get("market_cap_max") else None,

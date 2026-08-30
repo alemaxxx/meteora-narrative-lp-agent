@@ -20,6 +20,7 @@ pool_address: "<FILL-IN>"
 
 # --- Entry funnel (enforced by the Phase 4 discovery routine, not this controller) ---
 min_volume_24h_quote: '10000'
+min_tvl_quote: '1000'
 min_volume_tvl_ratio: '0.05'
 market_cap_min: null
 market_cap_max: null
