@@ -442,7 +442,7 @@ function startPoolPolling() {
 }
 
 const ADVANCED_FIELDS = [
-  ["total_amount_quote", "Total amount (quote asset)", "text"],
+  ["total_amount_quote", "Total amount — in the pair's quote token, NOT always dollars (see summary below)", "text"],
   ["side", "Initial side (1=BUY, 2=SELL, 3=RANGE)", "number"],
   ["position_width_pct", "Position width %", "text"],
   ["position_offset_pct", "Position offset %", "text"],
@@ -542,6 +542,18 @@ function buildConfig() {
   };
 }
 
+// "total_amount_quote" is ALWAYS denominated in the pair's quote token (the part
+// after the "-"), never literally in dollars -- confirmed the hard way in a live
+// deploy: "8" on a PINK-SOL pair meant 8 SOL (~$800+), not $8, because SOL is that
+// pair's quote token. Only a handful of tokens are actually dollar-pegged; everything
+// else needs the amount shown in its own unit, with an explicit non-stablecoin warning.
+const STABLECOINS = new Set(["USDC", "USDT", "USDS", "PYUSD", "DAI", "USDE", "FDUSD"]);
+
+function quoteTokenFromPair(pair) {
+  const parts = pair.split("-");
+  return parts.length === 2 ? parts[1] : null;
+}
+
 function renderSummary() {
   const config = buildConfig();
   const card = document.getElementById("summaryCard");
@@ -552,18 +564,32 @@ function renderSummary() {
     return;
   }
 
+  const quoteToken = quoteTokenFromPair(config.trading_pair);
+  const isStable = quoteToken && STABLECOINS.has(quoteToken.toUpperCase());
+  const amountLine = quoteToken
+    ? (isStable ? `$${config.total_amount_quote} (${quoteToken})` : `${config.total_amount_quote} ${quoteToken}`)
+    : `${config.total_amount_quote} (quote token)`;
+
   const profileLabel = RISK_PROFILES[selectedProfile].label;
   const up = config.uptrend_behavior === "hold"
     ? "hold steady — it won't chase the price up"
     : "follow the trend and reopen higher";
   const down = config.downtrend_behavior === "exit_to_stable"
-    ? "convert to stable (USDC) to avoid further loss"
+    ? `convert to ${quoteToken || "the quote token"} to avoid further loss`
     : "reopen lower — more fee income, more exposure";
   const hedge = config.hedge_enabled ? "on" : "off";
   const stopLoss = config.stop_loss_pct ? `${config.stop_loss_pct}%` : "off";
 
+  const nonStableWarning = (quoteToken && !isStable) ? `
+    <p style="color: var(--warn);">⚠ ${quoteToken} is not a stablecoin — this amount is
+    <b>${config.total_amount_quote} ${quoteToken}</b>, not dollars. And "convert to
+    ${quoteToken}" on a downtrend still leaves you holding a volatile asset, not cash —
+    it only protects against <em>this pair's</em> relative move, not a broader market drop.</p>
+  ` : "";
+
   card.innerHTML = `
-    <p><b>${profileLabel}</b> strategy on <b>${config.trading_pair}</b>, using <b>$${config.total_amount_quote}</b>.</p>
+    <p><b>${profileLabel}</b> strategy on <b>${config.trading_pair}</b>, using <b>${amountLine}</b>.</p>
+    ${nonStableWarning}
     <p>If price moves <b>above</b> the range, it will ${up}.</p>
     <p>If price moves <b>below</b> the range, it will ${down}.</p>
     <p>Stop-loss: <b>${stopLoss}</b>. Cross-venue hedge: <b>${hedge}</b>.</p>
