@@ -175,3 +175,14 @@ regression tests. What's left needs a live Hummingbot/Condor runtime and a funde
 wallet, neither of which exist in this environment — see
 [docs/dry-run-runbook.md](./docs/dry-run-runbook.md) for the checklist, ending with the
 hackathon's required demo video.
+
+**That live runbook is now in progress.** [docs/live-dry-run-notes.md](./docs/live-dry-run-notes.md)
+tracks it: the full stack (Gateway + Hummingbot API + Condor) is up on the user's own
+machine, a test wallet is imported, and Layer 1 (`meteora_pool_scanner`) is confirmed
+working end-to-end with live data from inside the real Condor runtime. One real finding:
+**both LunarCrush and CryptoPanic require a paid plan** for the API access Layer 2
+needs — contradicting Phase 4's research, which checked each provider's docs but not
+their current pricing. The 2-of-3 cross-check logic itself is confirmed correct (handles
+both providers being unavailable without crashing, correctly returns FAIL on 1/3 signals)
+— it just has no real path to a PASS verdict without paying for at least one provider.
+Documented rather than paid for, for now.
