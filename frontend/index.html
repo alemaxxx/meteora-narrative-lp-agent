@@ -195,6 +195,13 @@
         <tbody id="poolsTableBody"></tbody>
       </table>
     </div>
+
+    <div id="binControl" style="display:none; margin-top:14px;">
+      <label for="numBins">Number of bins (position width)</label>
+      <input type="number" id="numBins" min="2" step="1" value="10">
+      <div class="field-note" id="binControlNote"></div>
+    </div>
+
     <button class="link-toggle" onclick="toggleCollapsible('poolAdvanced')">⚙ Tune filters / pick manually ▾</button>
     <div class="collapsible" id="poolAdvanced">
       <div class="pool-filters" id="poolFilterInputs"></div>
@@ -341,7 +348,21 @@ function parsePool(raw) {
     volTvlRatio: tvl > 0 ? volume24h / tvl : 0,
     marketCap: tokenX.market_cap ?? null,
     dwellSeconds: dwellSeconds(raw.created_at),
+    // DLMM-specific: each bin covers a bin_step/100 % price move (e.g. bin_step=100 ->
+    // ~1% per bin). Confirmed live: a bin_step=100 pool with position_width_pct=0.5%
+    // opened with only 2 bins (the practical minimum) -- too narrow to be useful, and
+    // that width had no relationship to this specific pool's bin coarseness. Letting
+    // the user pick a bin count and computing width_pct from it (below) fixes that.
+    binStep: raw.pool_config && raw.pool_config.bin_step != null ? raw.pool_config.bin_step : null,
   };
+}
+
+// Approximate: real DLMM bin pricing compounds per bin rather than adding linearly, so
+// this is a linear estimate good enough to steer clear of "2 bins" or "2000 bins" --
+// not an exact match to what Gateway will actually carve out. Flagged as approximate
+// in the UI rather than presented as precise.
+function widthPctFromBinCount(numBins, binStep) {
+  return (numBins * binStep) / 100;
 }
 
 function poolPassesFilters(p, filters) {
@@ -429,12 +450,35 @@ async function loadPools() {
   }
 }
 
+let selectedPoolBinStep = null;
+
 function selectPool(p) {
   selectedPoolAddress = p.address;
+  selectedPoolBinStep = p.binStep;
   const [base, quote] = p.name.split(/\s*-\s*/);
   document.getElementById("tradingPair").value = base && quote ? `${base}-${quote}` : p.name;
   document.getElementById("poolAddress").value = p.address;
   loadPools(); // re-render to highlight the newly selected row
+
+  const binControl = document.getElementById("binControl");
+  if (selectedPoolBinStep != null) {
+    binControl.style.display = "block";
+    applyBinCount();
+  } else {
+    binControl.style.display = "none";
+    document.getElementById("binControlNote").textContent =
+      "This pool didn't report a bin_step -- position width falls back to the profile's default %.";
+  }
+  renderSummary();
+}
+
+function applyBinCount() {
+  const note = document.getElementById("binControlNote");
+  if (selectedPoolBinStep == null) return;
+  const numBins = Math.max(2, Number(document.getElementById("numBins").value) || 2);
+  const widthPct = widthPctFromBinCount(numBins, selectedPoolBinStep);
+  customValues.position_width_pct = widthPct.toFixed(4);
+  note.textContent = `~${numBins} bins on this pool's bin_step (${selectedPoolBinStep}) -> position_width_pct ≈ ${widthPct.toFixed(4)}%. Approximate -- DLMM bin pricing compounds, this is a linear estimate.`;
   renderSummary();
 }
 
@@ -487,6 +531,7 @@ function renderProfiles() {
       selectedProfile = key;
       customValues = {};
       poolFilterOverrides = {};
+      if (selectedPoolBinStep != null) applyBinCount(); // re-apply the bin-count width on top of the new profile's other fields
       renderProfiles();
       renderAdvanced();
       renderPoolFilterInputs();
@@ -667,6 +712,7 @@ async function deploy() {
 
 document.getElementById("tradingPair").addEventListener("input", renderSummary);
 document.getElementById("poolAddress").addEventListener("input", renderSummary);
+document.getElementById("numBins").addEventListener("input", applyBinCount);
 
 loadStoredCreds();
 renderProfiles();
