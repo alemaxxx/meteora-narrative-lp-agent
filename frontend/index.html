@@ -140,6 +140,8 @@
   .pool-row:hover { background: rgba(110, 231, 183, 0.06); }
   .pool-row.selected { background: rgba(110, 231, 183, 0.14); }
   .pool-row.selected td:first-child { color: var(--accent); font-weight: 600; }
+  .pool-link { color: var(--text-dim); text-decoration: none; font-size: 15px; }
+  .pool-link:hover { color: var(--accent); }
   .summary-card {
     background: var(--bg);
     border: 1px solid var(--panel-border);
@@ -188,7 +190,7 @@
     <div class="pool-table-wrap">
       <table class="pool-table">
         <thead>
-          <tr><th>Pool</th><th>Vol 24h</th><th>TVL</th><th>V/T</th><th>MCap</th><th>Age</th></tr>
+          <tr><th>Pool</th><th>Vol 24h</th><th>TVL</th><th>V/T</th><th>MCap</th><th>Age</th><th></th></tr>
         </thead>
         <tbody id="poolsTableBody"></tbody>
       </table>
@@ -401,7 +403,7 @@ async function loadPools() {
     const pools = await fetchNewPools();
     tbody.innerHTML = "";
     if (pools.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" class="field-note">No pools currently match this profile\'s filters.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="field-note">No pools currently match this profile\'s filters.</td></tr>';
     }
     pools.forEach((p) => {
       const tr = document.createElement("tr");
@@ -413,7 +415,8 @@ async function loadPools() {
         <td>${fmtUsd(p.tvl)}</td>
         <td>${p.volTvlRatio.toFixed(2)}x</td>
         <td>${fmtUsd(p.marketCap)}</td>
-        <td>${ageH}h</td>`;
+        <td>${ageH}h</td>
+        <td><a class="pool-link" href="https://app.meteora.ag/dlmm/${p.address}" target="_blank" rel="noopener" title="Open on Meteora" onclick="event.stopPropagation()">↗</a></td>`;
       tr.onclick = () => selectPool(p);
       tbody.appendChild(tr);
     });
