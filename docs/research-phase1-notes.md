@@ -36,6 +36,18 @@ Sources: [lp_rebalancer_guide.md](https://raw.githubusercontent.com/hummingbot/s
 [controller README](https://github.com/hummingbot/hummingbot/blob/development/controllers/generic/lp_rebalancer/README.md),
 [hummingbot-api PR #120](https://github.com/hummingbot/hummingbot-api/pull/120).
 
+### Refinement to apply when implementing (from Meteora's own "Zap Out" LP tip, 2026-08-30)
+
+Meteora's own UI promotes ["Zap Out"](https://x.com/MeteoraAG/status/2094085426630058344) —
+closing a position and instantly swapping into SOL/USDC in the same flow, to avoid
+holding the falling token between position close and swap. The Gateway `meteora/clmm`
+connector doesn't expose a single atomic "zap-out" endpoint (remove/close-position and
+execute-swap are separate calls), so **when implementing the "downtrend → exit to
+stable" behavior (strategy.md §4), chain remove-liquidity/close-position immediately
+into execute-swap**, minimizing the price-exposure window between the two calls, rather
+than treating them as independent, loosely-sequenced steps. Not a new feature — an
+execution-order refinement of a behavior already in the design.
+
 ## LP Executor (single position, manual)
 
 Executor used internally by `lp_rebalancer`, also usable standalone for manual control
