@@ -115,6 +115,16 @@ private key is ever held server-side.
 
 ## 8. Status
 
-Build phases are tracked in [README.md](./README.md). This document will be updated as
-each phase lands — most notably once Phase 3 fixes the exact `lp_rebalancer` extension
-points and Phase 4 fixes the exact LunarCrush/CryptoPanic cross-check thresholds.
+Build phases are tracked in [README.md](./README.md).
+
+**Phase 3 (Controller) is written, not yet run.** [`narrative_lp_agent`](./controllers/generic/narrative_lp_agent)
+extends `lp_rebalancer` with the directional toggles, cost-benefit gate, and stop-loss
+described in Sections 4–5 above, and the three profiles in Section 5 exist as config
+templates in `conf/controllers/`. What it does *not* do yet: enforce the entry funnel
+itself (that's Phase 4's job — a controller instance is bound to one pool from
+deployment, so pool discovery/filtering has to happen before deployment, not inside it)
+and execute the cross-venue hedge (config field exists, execution doesn't). See
+[docs/phase3-notes.md](./docs/phase3-notes.md) for the reasoning and known limitations,
+and [docs/research-phase1-notes.md](./docs/research-phase1-notes.md) for why extending
+`lp_rebalancer` was the right call. Validation happens in Phase 6 (dry-run) — this repo
+has no Hummingbot runtime installed to run it against yet.

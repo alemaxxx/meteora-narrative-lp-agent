@@ -1,0 +1,55 @@
+# Moderate risk profile — narrative_lp_agent
+#
+# Template. `trading_pair` and `pool_address` are filled in per-pool by the Phase 4/5
+# deployment flow once a pool clears the on-chain + narrative funnel — they are NOT
+# meant to be hand-edited to a fixed pool for production use.
+#
+# Rename to narrative_lp_agent_moderate.yml (git-ignored) once filled in, or use
+# scripts/deploy.py (Phase 6) to generate it from this template + a chosen pool.
+
+id: narrative_lp_agent_moderate
+controller_name: narrative_lp_agent
+controller_type: generic
+risk_profile: moderate
+
+# --- Network / pool (filled per-deployment) ---
+connector_name: solana-mainnet-beta
+lp_provider: meteora/clmm
+trading_pair: "<FILL-IN>"
+pool_address: "<FILL-IN>"
+
+# --- Entry funnel (enforced by the Phase 4 discovery routine, not this controller) ---
+min_volume_24h_quote: '20000'
+min_volume_tvl_ratio: '0.1'
+market_cap_min: null
+market_cap_max: null
+min_dwell_time_seconds: 1800     # 30min minimum pool age
+
+# --- Position sizing / bins ---
+total_amount_quote: '50'
+side: 1
+position_width_pct: '0.5'
+position_offset_pct: '0.01'
+strategy_type: 0
+
+# --- Rebalancing ---
+rebalance_threshold_pct: '1'
+uptrend_behavior: follow_trend
+downtrend_behavior: exit_to_stable
+min_fee_to_cost_ratio: '1.5'
+estimated_rebalance_cost_quote: '0.05'
+
+# --- Risk controls ---
+stop_loss_pct: '25'
+hedge_enabled: false
+hedge_venue: null
+hedge_ratio_pct: '100'
+
+# --- Price zones (optional, leave null to anchor at current price) ---
+sell_price_max: null
+sell_price_min: null
+buy_price_max: null
+buy_price_min: null
+
+autoswap: true
+swap_buffer_pct: '0.01'

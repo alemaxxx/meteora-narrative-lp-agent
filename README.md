@@ -35,11 +35,13 @@ DLMM position management from scratch.
 ```
 controllers/
   generic/
-    narrative_lp_agent/   # our Controller: extends Hummingbot's lp_rebalancer
-                           # with the on-chain + narrative entry funnel and the
-                           # 3 risk-profile presets (Phase 3)
+    narrative_lp_agent/   # our Controller: extends Hummingbot's lp_rebalancer with
+                           # directional toggles, a cost-benefit gate, and a stop-loss
+                           # (Phase 3 — see its own README.md for what it does and
+                           # does not enforce)
 conf/
-  controllers/            # generated YAML configs (git-ignored; *.example.yml tracked)
+  controllers/            # risk-profile templates (*.example.yml, tracked); filled-in
+                           # per-deployment configs are git-ignored
 routines/
   ...                      # Condor routines: narrative/social signal checks (Phase 4)
 scripts/
@@ -65,10 +67,14 @@ for the LP inventory.
 
 1. ✅ Reference research (official Hummingbot V2 Controller / Condor Routine / Meteora
    Gateway conventions) — see [docs/research-phase1-notes.md](./docs/research-phase1-notes.md)
-2. ✅ Repository scaffold (this commit)
-3. ⬜ Hummingbot V2 Controller — on-chain filter, `lp_rebalancer` extension, 3 risk
-   profiles
-4. ⬜ Narrative layer (Condor Agent — LunarCrush + CryptoPanic, 2-of-3 cross-check)
+2. ✅ Repository scaffold
+3. 🟡 Hummingbot V2 Controller — [`narrative_lp_agent`](./controllers/generic/narrative_lp_agent)
+   extends `lp_rebalancer` with directional toggles, a cost-benefit rebalance gate, a
+   stop-loss, and the 3 risk-profile presets. **Written, not yet run** — see
+   [docs/phase3-notes.md](./docs/phase3-notes.md); validation is Phase 6. The on-chain
+   filter itself (pool discovery) is Phase 4's job, not this controller's.
+4. ⬜ Narrative layer (Condor Agent — LunarCrush + CryptoPanic, 2-of-3 cross-check) —
+   also owns the on-chain pool-discovery filter that feeds the Phase 3 controller
 5. ⬜ Multi-user / connect-wallet layer
 6. ⬜ Dry-run / simulation mode + demo video
 
