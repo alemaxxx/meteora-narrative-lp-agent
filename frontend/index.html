@@ -127,6 +127,19 @@
   }
   .footer-note { font-size: 12px; color: var(--text-dim); margin-top: 30px; text-align: center; }
   .footer-note a { color: var(--text-dim); }
+  .pool-filters { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .pool-filters label { margin: 0 0 4px; font-size: 11px; }
+  .pool-table-wrap { overflow-x: auto; border: 1px solid var(--panel-border); border-radius: 8px; }
+  .pool-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pool-table th {
+    text-align: left; padding: 8px 10px; color: var(--text-dim); font-weight: 600;
+    font-size: 11px; text-transform: uppercase; border-bottom: 1px solid var(--panel-border);
+  }
+  .pool-table td { padding: 8px 10px; border-bottom: 1px solid var(--panel-border); white-space: nowrap; }
+  .pool-row { cursor: pointer; }
+  .pool-row:hover { background: rgba(110, 231, 183, 0.06); }
+  .pool-row.selected { background: rgba(110, 231, 183, 0.14); }
+  .pool-row.selected td:first-child { color: var(--accent); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -186,13 +199,30 @@
   </section>
 
   <section>
-    <h2>4 · Pool</h2>
+    <h2>4 · New pools</h2>
     <div class="field-note" style="margin-bottom:10px;">
-      Automatic pool discovery (on-chain + narrative funnel) runs server-side via
-      <code>routines/narrative_lp_funnel.py</code> — this page deploys against one pool
-      you specify directly. Paste a pool that already cleared the funnel (or one you've
-      chosen manually).
+      Fetched live, directly from your browser, from Meteora's own DLMM pools API —
+      Layer 1 of the entry funnel (<code>routines/meteora_pool_scanner.py</code>), ported
+      to JS here so this needs no backend of ours. Filters default from the selected risk
+      profile; click a pool to fill in the fields below. This is Layer 1 (on-chain) only —
+      the narrative cross-check (Layer 2, LunarCrush + CryptoPanic) still runs server-side
+      via <code>routines/narrative_lp_funnel.py</code>, not from this page.
     </div>
+    <div class="pool-filters" id="poolFilterInputs"></div>
+    <div style="margin:10px 0;">
+      <button class="secondary" onclick="loadPools()">Refresh now</button>
+      <span id="poolsStatus" class="status"></span>
+    </div>
+    <div class="pool-table-wrap">
+      <table class="pool-table">
+        <thead>
+          <tr><th>Pool</th><th>Vol 24h</th><th>TVL</th><th>V/T</th><th>MCap</th><th>Age</th></tr>
+        </thead>
+        <tbody id="poolsTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="field-note" style="margin:14px 0 4px;">Or fill in manually / override the selection above:</div>
     <div class="row">
       <div>
         <label for="tradingPair">Trading pair</label>
@@ -231,6 +261,8 @@ const RISK_PROFILES = {
     downtrend_behavior: "exit_to_stable", min_fee_to_cost_ratio: "2.5",
     estimated_rebalance_cost_quote: "0.05", stop_loss_pct: "15", hedge_enabled: true,
     autoswap: true, swap_buffer_pct: "0.01",
+    // Layer 1 on-chain filter thresholds -- mirrors conf/controllers/narrative_lp_agent_conservative.example.yml
+    scanner: { min_volume_24h_quote: 50000, min_tvl_quote: 20000, min_volume_tvl_ratio: 0.15, min_dwell_time_seconds: 3600 },
   },
   moderate: {
     label: "Moderate", desc: "Balanced width and thresholds, follows trend up, exits to stable on downtrend.",
@@ -239,6 +271,7 @@ const RISK_PROFILES = {
     downtrend_behavior: "exit_to_stable", min_fee_to_cost_ratio: "1.5",
     estimated_rebalance_cost_quote: "0.05", stop_loss_pct: "25", hedge_enabled: false,
     autoswap: true, swap_buffer_pct: "0.01",
+    scanner: { min_volume_24h_quote: 20000, min_tvl_quote: 5000, min_volume_tvl_ratio: 0.1, min_dwell_time_seconds: 1800 },
   },
   aggressive: {
     label: "Aggressive", desc: "Tight bins, frequent rebalancing, reopens lower on downtrend, hedge off.",
@@ -247,8 +280,147 @@ const RISK_PROFILES = {
     downtrend_behavior: "reopen_lower", min_fee_to_cost_ratio: "1.1",
     estimated_rebalance_cost_quote: "0.05", stop_loss_pct: "35", hedge_enabled: false,
     autoswap: true, swap_buffer_pct: "0.02",
+    scanner: { min_volume_24h_quote: 10000, min_tvl_quote: 1000, min_volume_tvl_ratio: 0.05, min_dwell_time_seconds: 600 },
   },
 };
+
+// Meteora's own DLMM-specific pools API -- CORS-open (verified live), same source
+// routines/meteora_pool_scanner.py was rewritten around in Phase 6. Ported here in JS
+// so this panel needs no backend of ours, consistent with docs/phase5-notes.md.
+const METEORA_POOLS_URL = "https://dlmm.datapi.meteora.ag/pools";
+const POOL_REFRESH_MS = 30000;
+let poolRefreshTimer = null;
+let poolFilterOverrides = {};
+let selectedPoolAddress = null;
+
+function currentScannerFilters() {
+  return { ...RISK_PROFILES[selectedProfile].scanner, ...poolFilterOverrides };
+}
+
+function buildMeteoraFilterString(filters) {
+  const parts = ["is_blacklisted=false"];
+  if (filters.min_volume_24h_quote > 0) parts.push(`volume_24h>${filters.min_volume_24h_quote}`);
+  if (filters.min_tvl_quote > 0) parts.push(`tvl>${filters.min_tvl_quote}`);
+  return parts.join("&&");
+}
+
+function dwellSeconds(createdAtMs) {
+  if (!createdAtMs) return null;
+  return (Date.now() - createdAtMs) / 1000;
+}
+
+function parsePool(raw) {
+  const volume24h = (raw.volume && raw.volume["24h"]) || 0;
+  const tvl = raw.tvl || 0;
+  const tokenX = raw.token_x || {};
+  return {
+    name: raw.name || "",
+    address: raw.address || "",
+    volume24h,
+    tvl,
+    volTvlRatio: tvl > 0 ? volume24h / tvl : 0,
+    marketCap: tokenX.market_cap ?? null,
+    dwellSeconds: dwellSeconds(raw.created_at),
+  };
+}
+
+function poolPassesFilters(p, filters) {
+  if (p.volume24h < filters.min_volume_24h_quote) return false;
+  if (p.tvl < filters.min_tvl_quote) return false;
+  if (p.volTvlRatio < filters.min_volume_tvl_ratio) return false;
+  if (p.dwellSeconds === null || p.dwellSeconds < filters.min_dwell_time_seconds) return false;
+  return true;
+}
+
+function fmtUsd(v) {
+  if (v === null || v === undefined) return "?";
+  if (v >= 1_000_000) return "$" + (v / 1_000_000).toFixed(1) + "M";
+  if (v >= 1_000) return "$" + (v / 1_000).toFixed(1) + "K";
+  return "$" + v.toFixed(0);
+}
+
+async function fetchNewPools() {
+  const filters = currentScannerFilters();
+  const params = new URLSearchParams({
+    page: "1", page_size: "100", sort_by: "volume_24h:desc",
+    filter_by: buildMeteoraFilterString(filters),
+  });
+  const resp = await fetch(`${METEORA_POOLS_URL}?${params}`);
+  if (!resp.ok) throw new Error(`Meteora API HTTP ${resp.status}`);
+  const data = await resp.json();
+  const pools = (data.data || []).map(parsePool).filter((p) => poolPassesFilters(p, filters));
+  pools.sort((a, b) => b.volTvlRatio - a.volTvlRatio);
+  return pools.slice(0, 20);
+}
+
+function renderPoolFilterInputs() {
+  const el = document.getElementById("poolFilterInputs");
+  const filters = currentScannerFilters();
+  const fields = [
+    ["min_volume_24h_quote", "Min 24h volume ($)"],
+    ["min_tvl_quote", "Min TVL ($)"],
+    ["min_volume_tvl_ratio", "Min Volume/TVL ratio"],
+    ["min_dwell_time_seconds", "Min pool age (s)"],
+  ];
+  el.innerHTML = "";
+  fields.forEach(([key, label]) => {
+    const wrap = document.createElement("div");
+    wrap.innerHTML = `<label>${label}</label><input type="number" step="any" data-key="${key}" value="${filters[key]}">`;
+    wrap.querySelector("input").addEventListener("change", (e) => {
+      poolFilterOverrides[key] = Number(e.target.value);
+      loadPools();
+    });
+    el.appendChild(wrap);
+  });
+}
+
+async function loadPools() {
+  const statusEl = document.getElementById("poolsStatus");
+  const tbody = document.getElementById("poolsTableBody");
+  statusEl.textContent = "Updating…";
+  statusEl.className = "status";
+  try {
+    const pools = await fetchNewPools();
+    tbody.innerHTML = "";
+    if (pools.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" class="field-note">No pools currently match this profile\'s filters.</td></tr>';
+    }
+    pools.forEach((p) => {
+      const tr = document.createElement("tr");
+      tr.className = "pool-row" + (p.address === selectedPoolAddress ? " selected" : "");
+      const ageH = p.dwellSeconds ? (p.dwellSeconds / 3600).toFixed(1) : "?";
+      tr.innerHTML = `
+        <td>${p.name}</td>
+        <td>${fmtUsd(p.volume24h)}</td>
+        <td>${fmtUsd(p.tvl)}</td>
+        <td>${p.volTvlRatio.toFixed(2)}x</td>
+        <td>${fmtUsd(p.marketCap)}</td>
+        <td>${ageH}h</td>`;
+      tr.onclick = () => selectPool(p);
+      tbody.appendChild(tr);
+    });
+    const now = new Date().toLocaleTimeString();
+    statusEl.textContent = `✓ ${pools.length} pools · updated ${now} · auto-refresh every ${POOL_REFRESH_MS / 1000}s`;
+    statusEl.className = "status ok";
+  } catch (e) {
+    statusEl.textContent = "✗ " + e.message;
+    statusEl.className = "status err";
+  }
+}
+
+function selectPool(p) {
+  selectedPoolAddress = p.address;
+  const [base, quote] = p.name.split(/\s*-\s*/);
+  document.getElementById("tradingPair").value = base && quote ? `${base}-${quote}` : p.name;
+  document.getElementById("poolAddress").value = p.address;
+  loadPools(); // re-render to highlight the newly selected row
+}
+
+function startPoolPolling() {
+  if (poolRefreshTimer) clearInterval(poolRefreshTimer);
+  loadPools();
+  poolRefreshTimer = setInterval(loadPools, POOL_REFRESH_MS);
+}
 
 const ADVANCED_FIELDS = [
   ["total_amount_quote", "Total amount (quote asset)", "text"],
@@ -289,7 +461,15 @@ function renderProfiles() {
     const card = document.createElement("button");
     card.className = "profile-card" + (key === selectedProfile ? " selected" : "");
     card.innerHTML = `<div class="name">${p.label}</div><div class="desc">${p.desc}</div>`;
-    card.onclick = () => { selectedProfile = key; customValues = {}; renderProfiles(); renderAdvanced(); };
+    card.onclick = () => {
+      selectedProfile = key;
+      customValues = {};
+      poolFilterOverrides = {};
+      renderProfiles();
+      renderAdvanced();
+      renderPoolFilterInputs();
+      loadPools();
+    };
     container.appendChild(card);
   });
 }
@@ -418,6 +598,8 @@ async function deploy() {
 loadStoredCreds();
 renderProfiles();
 renderAdvanced();
+renderPoolFilterInputs();
+startPoolPolling();
 </script>
 </body>
 </html>

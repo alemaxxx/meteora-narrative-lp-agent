@@ -47,10 +47,30 @@ inaccurate framing.
   that would need real backend infrastructure (per-user credential isolation, likely the
   Privy-server-wallet-style policy-controlled signing hummingbot/gateway has an open
   issue for, not shipped yet) and is out of scope for this phase.
-- **Pool selection is manual in the frontend.** `narrative_lp_funnel.py` (Phase 4) does
-  automatic Layer 1 + Layer 2 discovery server-side, but the frontend doesn't call it —
-  it deploys against a `trading_pair`/`pool_address` the user pastes in. Wiring the
-  frontend to trigger and display funnel results is a natural next step, not built here.
+- **Pool selection is now automatic for Layer 1 (added post-Phase-5, same day).** The
+  frontend polls Meteora's own DLMM pools API directly from the browser every 30s
+  (`METEORA_POOLS_URL` in `frontend/index.html`) — a JS port of
+  `routines/meteora_pool_scanner.py`'s filter logic, using the same live-verified
+  endpoint from Phase 6 (CORS confirmed open, `Access-Control-Allow-Origin` reflects the
+  request origin). Filters default from the selected risk profile and are user-editable;
+  clicking a pool fills in the trading pair/pool address. Verified live in a real
+  browser: real pools loaded, profile switching updated filters and refetched, editing a
+  filter refetched with the new bound (checked by setting an impossible TVL floor and
+  confirming zero results), row selection filled the fields and persisted the highlight
+  across the next auto-refresh.
+  **Layer 2 (narrative) is still server-side only** — `narrative_lp_funnel.py`'s
+  LunarCrush/CryptoPanic cross-check isn't callable from the browser. Checked
+  live: LunarCrush's API is CORS-open (`Access-Control-Allow-Origin: *`) and could be
+  ported the same way if a future pass wants an in-browser narrative signal; CryptoPanic
+  returned no CORS headers at all in a live check and is very likely not reachable from
+  a browser regardless of key — that one would need a small proxy, which this project
+  deliberately doesn't run (see the custody-model section above). Not built now because
+  it wasn't asked for and a half-working narrative panel (LunarCrush working,
+  CryptoPanic silently failing) would be worse than being explicit that Layer 2 stays
+  server-side.
+- **`RISK_PROFILES` in the frontend JS now also carries each profile's Layer 1
+  thresholds** (`scanner: {...}`), duplicating the YAML templates' entry-funnel section
+  by hand, same caveat as the line below.
 - **`RISK_PROFILES` in the frontend JS duplicates the three YAML templates by hand** —
   documented in the file's own comment. A future pass could generate the JS from the
   YAML (or vice versa) instead of maintaining both.

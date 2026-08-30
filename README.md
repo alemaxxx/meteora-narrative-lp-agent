@@ -94,7 +94,10 @@ for the LP inventory.
    frontend never asks for a private key and never sends anything to a server this
    project runs. Verified working locally (profile selection, advanced fields, config
    preview, graceful connection-failure handling) — not yet tested against a live
-   Hummingbot API.
+   Hummingbot API. New pools now surface automatically: the frontend polls Meteora's own
+   DLMM pools API directly from the browser every 30s (Layer 1 only, filtered by the
+   selected risk profile), click a row to fill in the deploy fields — verified live in a
+   real browser, see [docs/phase5-notes.md](./docs/phase5-notes.md).
 6. 🟡 Dry-run / simulation mode ([tests/](./tests), [docs/phase6-notes.md](./docs/phase6-notes.md)) —
    37 tests passing, 2 real bugs found and fixed by actually running things (a dead
    GeckoTerminal DEX id + a missing TVL floor letting degenerate ratios dominate the
