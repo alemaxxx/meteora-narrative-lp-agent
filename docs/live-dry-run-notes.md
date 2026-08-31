@@ -130,7 +130,44 @@ Open" + "Liquidity: Add" on the real Meteora DLMM Program
 the Meteora track's core requirement — "provide liquidity... on Meteora pools (DLMM)...
 via the Hummingbot Gateway connector" — demonstrated for real, not simulated.
 
-## Finding #4: position width has no relationship to a specific pool's bin coarseness
+## Finding #4 (the important one): closing a position on Meteora's site does NOT stop the bot
+
+After the COT-SOL position above, the user closed it manually on Meteora's own website
+(app.meteora.ag) rather than through this project's tooling. **The bot container kept
+running.** Following `lp_rebalancer`'s inherited retry-on-close logic (see
+`docs/phase3-notes.md`), it detected the out-of-band close and spent roughly the next
+hour trying to reopen: repeatedly running `autoswap` to buy more of the base token
+(COT) with the wallet's SOL whenever it computed a shortfall, retrying through Gateway/RPC
+failures (rate limits, slippage tolerance, transaction simulation failures, an expired
+blockhash), and — twice — **succeeding**: opening a brand-new real position with no user
+action at all, each time funded partly by the SOL the autoswap loop had spent buying COT
+along the way. The second one was caught and stopped (`docker stop`) only because the
+user happened to check their wallet balance and noticed an unfamiliar token; confirmed
+independently via Solscan (a "Position: Open" transaction ~50 seconds before the
+container was actually killed) and via `docker ps` (the container had been `Up` for over
+an hour since the very first deploy).
+
+**The lesson, stated plainly: "close the position on the site" and "stop the bot" are
+two different actions, and only killing the container actually stops the automation.**
+This is not a bug in the sense of doing something wrong per its own logic — `lp_rebalancer`
+is designed to treat any closed position as something to recover from, which is exactly
+right when *it* closed the position and wrong when a human closed it on purpose out of
+band. Both positions were eventually closed and funds recovered (verified: `positions_owned`
+returns `[]`, final balance confirmed against Solscan), but this is a real gap, not just
+a caveat:
+
+- **Not yet built:** a way to tell a running bot "the human closed this on purpose, don't
+  reopen" short of killing the container — e.g. detecting the position's on-chain closer
+  wasn't the bot's own executor, or a simple external "pause" signal the frontend could
+  send.
+- **Not yet built:** a cap on how much the autoswap-driven retry loop can spend chasing a
+  reopen — it kept buying more base token in small increments across many failed
+  attempts with no overall budget, only the existing per-position-open retry counter.
+- **Operational takeaway for the demo video and for real use:** always stop the bot
+  container explicitly, never assume closing a position elsewhere is sufficient. Worth a
+  loud warning in `docs/wallet-setup.md` and the frontend itself.
+
+## Finding #5: position width has no relationship to a specific pool's bin coarseness
 
 The opened position looked wrong in Meteora's own UI: "Total Bins: 2" — the practical
 minimum. Root cause: `position_width_pct` (0.5%, the Moderate profile default) and
