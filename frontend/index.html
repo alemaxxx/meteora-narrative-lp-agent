@@ -135,6 +135,8 @@
     text-align: left; padding: 8px 10px; color: var(--text-dim); font-weight: 600;
     font-size: 11px; text-transform: uppercase; border-bottom: 1px solid var(--panel-border);
   }
+  .sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+  .sortable-th:hover { color: var(--accent); }
   .pool-table td { padding: 8px 10px; border-bottom: 1px solid var(--panel-border); white-space: nowrap; }
   .pool-row { cursor: pointer; }
   .pool-row:hover { background: rgba(110, 231, 183, 0.06); }
@@ -172,16 +174,25 @@
     <h2>1 · Risk profile</h2>
     <div class="profiles" id="profileCards"></div>
     <button class="link-toggle" onclick="toggleCollapsible('advancedPanel')">⚙ Advanced (customize every field) ▾</button>
-    <div class="collapsible" id="advancedPanel"></div>
+    <div class="collapsible" id="advancedPanel">
+      <div class="field-note" style="margin-bottom:6px;">Meteora bin shape</div>
+      <div class="profiles" id="strategyTypeCards" style="margin-bottom:16px;"></div>
+      <div id="advancedFieldsInner"></div>
+      <div class="field-note" style="margin:16px 0 6px;">
+        Entry filters — apply to every pool the bot considers in step 2, not just one:
+      </div>
+      <div class="pool-filters" id="poolFilterInputs"></div>
+    </div>
   </section>
 
   <section>
     <h2>2 · Pick a pool</h2>
     <div class="field-note" style="margin-bottom:10px;">
       Fetched live, directly from your browser, from Meteora's own DLMM pools API —
-      Layer 1 of the entry funnel. Filters default from your risk profile above; click a
-      pool below to select it. This is Layer 1 (on-chain) only — the narrative
-      cross-check (Layer 2) still runs server-side, not from this page.
+      Layer 1 of the entry funnel, filtered by the entry filters above. Click a pool
+      below to select it, or click a column header to sort. This is Layer 1 (on-chain)
+      only — the narrative cross-check (Layer 2) still runs server-side, not from this
+      page.
     </div>
     <div style="margin-bottom:10px;">
       <button class="secondary" onclick="loadPools()">Refresh now</button>
@@ -189,9 +200,7 @@
     </div>
     <div class="pool-table-wrap">
       <table class="pool-table">
-        <thead>
-          <tr><th>Pool</th><th>Vol 24h</th><th>TVL</th><th>V/T</th><th>MCap</th><th>Age</th><th></th></tr>
-        </thead>
+        <thead id="poolsTableHead"></thead>
         <tbody id="poolsTableBody"></tbody>
       </table>
     </div>
@@ -202,10 +211,8 @@
       <div class="field-note" id="binControlNote"></div>
     </div>
 
-    <button class="link-toggle" onclick="toggleCollapsible('poolAdvanced')">⚙ Tune filters / pick manually ▾</button>
-    <div class="collapsible" id="poolAdvanced">
-      <div class="pool-filters" id="poolFilterInputs"></div>
-      <div class="field-note" style="margin:14px 0 4px;">Or fill in a pool manually:</div>
+    <button class="link-toggle" onclick="toggleCollapsible('poolManual')">✎ Enter a pool manually ▾</button>
+    <div class="collapsible" id="poolManual">
       <div class="row">
         <div>
           <label for="tradingPair">Trading pair</label>
@@ -390,8 +397,55 @@ async function fetchNewPools() {
   if (!resp.ok) throw new Error(`Meteora API HTTP ${resp.status}`);
   const data = await resp.json();
   const pools = (data.data || []).map(parsePool).filter((p) => poolPassesFilters(p, filters));
-  pools.sort((a, b) => b.volTvlRatio - a.volTvlRatio);
-  return pools.slice(0, 20);
+  // Default order server doesn't guarantee post-filter; sortPools() applies the
+  // user's actual chosen column/direction (default volTvlRatio desc) before render.
+  return pools.slice(0, 40);
+}
+
+const SORT_COLUMNS = [
+  { key: "name", label: "Pool" },
+  { key: "volume24h", label: "Vol 24h" },
+  { key: "tvl", label: "TVL" },
+  { key: "volTvlRatio", label: "V/T" },
+  { key: "marketCap", label: "MCap" },
+  { key: "dwellSeconds", label: "Age" },
+];
+let sortColumn = "volTvlRatio";
+let sortDirection = "desc";
+let lastFetchedPools = [];
+
+function renderTableHead() {
+  const thead = document.getElementById("poolsTableHead");
+  const cells = SORT_COLUMNS.map(({ key, label }) => {
+    const arrow = sortColumn === key ? (sortDirection === "desc" ? " ▼" : " ▲") : "";
+    return `<th class="sortable-th" data-key="${key}">${label}${arrow}</th>`;
+  }).join("");
+  thead.innerHTML = `<tr>${cells}<th></th></tr>`;
+  thead.querySelectorAll(".sortable-th").forEach((th) => {
+    th.onclick = () => {
+      const key = th.dataset.key;
+      if (sortColumn === key) {
+        sortDirection = sortDirection === "desc" ? "asc" : "desc";
+      } else {
+        sortColumn = key;
+        sortDirection = "desc";
+      }
+      renderTableHead();
+      renderPoolTable();
+    };
+  });
+}
+
+function sortPools(pools) {
+  const sorted = [...pools].sort((a, b) => {
+    const av = a[sortColumn], bv = b[sortColumn];
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    if (typeof av === "string") return av.localeCompare(bv);
+    return av - bv;
+  });
+  if (sortDirection === "desc") sorted.reverse();
+  return sorted;
 }
 
 function renderPoolFilterInputs() {
@@ -415,34 +469,40 @@ function renderPoolFilterInputs() {
   });
 }
 
+function renderPoolTable() {
+  const tbody = document.getElementById("poolsTableBody");
+  const pools = sortPools(lastFetchedPools).slice(0, 20);
+  tbody.innerHTML = "";
+  if (pools.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="field-note">No pools currently match this profile\'s filters.</td></tr>';
+    return;
+  }
+  pools.forEach((p) => {
+    const tr = document.createElement("tr");
+    tr.className = "pool-row" + (p.address === selectedPoolAddress ? " selected" : "");
+    const ageH = p.dwellSeconds ? (p.dwellSeconds / 3600).toFixed(1) : "?";
+    tr.innerHTML = `
+      <td>${p.name}</td>
+      <td>${fmtUsd(p.volume24h)}</td>
+      <td>${fmtUsd(p.tvl)}</td>
+      <td>${p.volTvlRatio.toFixed(2)}x</td>
+      <td>${fmtUsd(p.marketCap)}</td>
+      <td>${ageH}h</td>
+      <td><a class="pool-link" href="https://app.meteora.ag/dlmm/${p.address}" target="_blank" rel="noopener" title="Open on Meteora" onclick="event.stopPropagation()">↗</a></td>`;
+    tr.onclick = () => selectPool(p);
+    tbody.appendChild(tr);
+  });
+}
+
 async function loadPools() {
   const statusEl = document.getElementById("poolsStatus");
-  const tbody = document.getElementById("poolsTableBody");
   statusEl.textContent = "Updating…";
   statusEl.className = "status";
   try {
-    const pools = await fetchNewPools();
-    tbody.innerHTML = "";
-    if (pools.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" class="field-note">No pools currently match this profile\'s filters.</td></tr>';
-    }
-    pools.forEach((p) => {
-      const tr = document.createElement("tr");
-      tr.className = "pool-row" + (p.address === selectedPoolAddress ? " selected" : "");
-      const ageH = p.dwellSeconds ? (p.dwellSeconds / 3600).toFixed(1) : "?";
-      tr.innerHTML = `
-        <td>${p.name}</td>
-        <td>${fmtUsd(p.volume24h)}</td>
-        <td>${fmtUsd(p.tvl)}</td>
-        <td>${p.volTvlRatio.toFixed(2)}x</td>
-        <td>${fmtUsd(p.marketCap)}</td>
-        <td>${ageH}h</td>
-        <td><a class="pool-link" href="https://app.meteora.ag/dlmm/${p.address}" target="_blank" rel="noopener" title="Open on Meteora" onclick="event.stopPropagation()">↗</a></td>`;
-      tr.onclick = () => selectPool(p);
-      tbody.appendChild(tr);
-    });
+    lastFetchedPools = await fetchNewPools();
+    renderPoolTable();
     const now = new Date().toLocaleTimeString();
-    statusEl.textContent = `✓ ${pools.length} pools · updated ${now} · auto-refresh every ${POOL_REFRESH_MS / 1000}s`;
+    statusEl.textContent = `✓ ${lastFetchedPools.length} pools · updated ${now} · auto-refresh every ${POOL_REFRESH_MS / 1000}s`;
     statusEl.className = "status ok";
   } catch (e) {
     statusEl.textContent = "✗ " + e.message;
@@ -458,7 +518,7 @@ function selectPool(p) {
   const [base, quote] = p.name.split(/\s*-\s*/);
   document.getElementById("tradingPair").value = base && quote ? `${base}-${quote}` : p.name;
   document.getElementById("poolAddress").value = p.address;
-  loadPools(); // re-render to highlight the newly selected row
+  renderPoolTable(); // re-render (no re-fetch) to highlight the newly selected row
 
   const binControl = document.getElementById("binControl");
   if (selectedPoolBinStep != null) {
@@ -491,14 +551,21 @@ function startPoolPolling() {
 const ADVANCED_FIELDS = [
   ["total_amount_quote", "Total amount — in the pair's quote token, NOT always dollars (see summary below)", "text"],
   ["side", "Initial side (1=BUY, 2=SELL, 3=RANGE)", "number"],
-  ["position_width_pct", "Position width %", "text"],
+  ["position_width_pct", "Position width % (auto-filled once you pick a pool and a bin count in step 2)", "text"],
   ["position_offset_pct", "Position offset %", "text"],
-  ["strategy_type", "Meteora strategy type (0=Spot, 1=Curve, 2=Bid-Ask)", "number"],
   ["rebalance_threshold_pct", "Rebalance threshold %", "text"],
   ["min_fee_to_cost_ratio", "Min fee/cost ratio", "text"],
   ["estimated_rebalance_cost_quote", "Estimated rebalance cost (quote)", "text"],
   ["stop_loss_pct", "Stop-loss % (blank = off)", "text"],
   ["swap_buffer_pct", "Autoswap buffer %", "text"],
+];
+
+// Meteora's 3 DLMM liquidity shapes -- matches the controller's strategy_type field
+// (0/1/2) exactly, see controllers/generic/narrative_lp_agent/narrative_lp_agent.py.
+const STRATEGY_TYPES = [
+  { value: 0, label: "Spot", desc: "Even liquidity across the whole range. Simple, predictable." },
+  { value: 1, label: "Curve", desc: "Concentrated near the current price. More fees if price stays put." },
+  { value: 2, label: "Bid-Ask", desc: "Concentrated at the edges. More fees if price swings a lot." },
 ];
 
 let selectedProfile = "moderate";
@@ -543,7 +610,7 @@ function renderProfiles() {
 }
 
 function renderAdvanced() {
-  const panel = document.getElementById("advancedPanel");
+  const panel = document.getElementById("advancedFieldsInner");
   const base = RISK_PROFILES[selectedProfile];
   panel.innerHTML = "";
   ADVANCED_FIELDS.forEach(([key, label, type]) => {
@@ -555,6 +622,26 @@ function renderAdvanced() {
       renderSummary();
     });
     panel.appendChild(row);
+  });
+  renderStrategyTypeCards();
+}
+
+function renderStrategyTypeCards() {
+  const container = document.getElementById("strategyTypeCards");
+  const base = RISK_PROFILES[selectedProfile];
+  const current = customValues.strategy_type !== undefined ? Number(customValues.strategy_type) : base.strategy_type;
+  container.innerHTML = "";
+  STRATEGY_TYPES.forEach((st) => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "profile-card" + (st.value === current ? " selected" : "");
+    card.innerHTML = `<div class="name">${st.label}</div><div class="desc">${st.desc}</div>`;
+    card.onclick = () => {
+      customValues.strategy_type = st.value;
+      renderStrategyTypeCards();
+      renderSummary();
+    };
+    container.appendChild(card);
   });
 }
 
@@ -718,6 +805,7 @@ loadStoredCreds();
 renderProfiles();
 renderAdvanced();
 renderPoolFilterInputs();
+renderTableHead();
 startPoolPolling();
 renderSummary();
 </script>
