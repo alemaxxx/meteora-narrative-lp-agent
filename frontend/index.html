@@ -137,6 +137,13 @@
   }
   .sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
   .sortable-th:hover { color: var(--accent); }
+  .window-tab {
+    background: transparent; color: var(--text-dim); border: 1px solid var(--panel-border);
+    border-radius: 6px; padding: 4px 10px; font-size: 12px; font-weight: 500;
+    cursor: pointer; margin-right: 4px;
+  }
+  .window-tab.selected { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+  .window-tab:hover:not(.selected) { color: var(--text); }
   .pool-table td { padding: 8px 10px; border-bottom: 1px solid var(--panel-border); white-space: nowrap; }
   .pool-row { cursor: pointer; }
   .pool-row:hover { background: rgba(110, 231, 183, 0.06); }
@@ -197,6 +204,10 @@
     <div style="margin-bottom:10px;">
       <button class="secondary" onclick="loadPools()">Refresh now</button>
       <span id="poolsStatus" class="status"></span>
+    </div>
+    <div style="margin-bottom:10px;">
+      <span class="field-note" style="margin-right:8px;">Volume window:</span>
+      <span id="volumeWindowTabs"></span>
     </div>
     <div class="pool-table-wrap">
       <table class="pool-table">
@@ -344,13 +355,21 @@ function dwellSeconds(createdAtMs) {
 }
 
 function parsePool(raw) {
-  const volume24h = (raw.volume && raw.volume["24h"]) || 0;
+  // Real windows Meteora's own pools API returns for volume -- confirmed against a
+  // live response, not assumed. No 1m/5m like GMGN (which the user compared this to);
+  // 30m is the finest granularity actually available here.
+  const volumeByWindow = raw.volume || {};
+  const volume24h = volumeByWindow["24h"] || 0;
   const tvl = raw.tvl || 0;
   const tokenX = raw.token_x || {};
   return {
     name: raw.name || "",
     address: raw.address || "",
-    volume24h,
+    volume24h, // fixed 24h -- used for entry-funnel filtering, matching
+               // meteora_pool_scanner.py's actual (also fixed-24h) filter logic. The
+               // window tabs below only change what's displayed/sorted, not this.
+    volumeByWindow,
+    displayVolume: volume24h, // updated by applyVolumeWindow() when the tab changes
     tvl,
     volTvlRatio: tvl > 0 ? volume24h / tvl : 0,
     marketCap: tokenX.market_cap ?? null,
@@ -404,7 +423,7 @@ async function fetchNewPools() {
 
 const SORT_COLUMNS = [
   { key: "name", label: "Pool" },
-  { key: "volume24h", label: "Vol 24h" },
+  { key: "displayVolume", label: "Vol" }, // label gets the active window appended, see renderTableHead()
   { key: "tvl", label: "TVL" },
   { key: "volTvlRatio", label: "V/T" },
   { key: "marketCap", label: "MCap" },
@@ -414,11 +433,39 @@ let sortColumn = "volTvlRatio";
 let sortDirection = "desc";
 let lastFetchedPools = [];
 
+// Real windows confirmed on a live Meteora pools API response -- no 1m/5m available
+// (the user compared this to GMGN, which does have those; 30m is this API's floor).
+const VOLUME_WINDOWS = ["30m", "1h", "2h", "4h", "12h", "24h"];
+let selectedVolumeWindow = "24h";
+
+function renderVolumeWindowTabs() {
+  const el = document.getElementById("volumeWindowTabs");
+  el.innerHTML = VOLUME_WINDOWS.map(
+    (w) => `<button type="button" class="window-tab${w === selectedVolumeWindow ? " selected" : ""}" data-window="${w}">${w}</button>`
+  ).join("");
+  el.querySelectorAll(".window-tab").forEach((btn) => {
+    btn.onclick = () => {
+      selectedVolumeWindow = btn.dataset.window;
+      applyVolumeWindow();
+    };
+  });
+}
+
+function applyVolumeWindow() {
+  lastFetchedPools.forEach((p) => {
+    p.displayVolume = p.volumeByWindow[selectedVolumeWindow] ?? 0;
+  });
+  renderVolumeWindowTabs();
+  renderTableHead();
+  renderPoolTable();
+}
+
 function renderTableHead() {
   const thead = document.getElementById("poolsTableHead");
   const cells = SORT_COLUMNS.map(({ key, label }) => {
+    const displayLabel = key === "displayVolume" ? `${label} ${selectedVolumeWindow}` : label;
     const arrow = sortColumn === key ? (sortDirection === "desc" ? " ▼" : " ▲") : "";
-    return `<th class="sortable-th" data-key="${key}">${label}${arrow}</th>`;
+    return `<th class="sortable-th" data-key="${key}">${displayLabel}${arrow}</th>`;
   }).join("");
   thead.innerHTML = `<tr>${cells}<th></th></tr>`;
   thead.querySelectorAll(".sortable-th").forEach((th) => {
@@ -483,7 +530,7 @@ function renderPoolTable() {
     const ageH = p.dwellSeconds ? (p.dwellSeconds / 3600).toFixed(1) : "?";
     tr.innerHTML = `
       <td>${p.name}</td>
-      <td>${fmtUsd(p.volume24h)}</td>
+      <td>${fmtUsd(p.displayVolume)}</td>
       <td>${fmtUsd(p.tvl)}</td>
       <td>${p.volTvlRatio.toFixed(2)}x</td>
       <td>${fmtUsd(p.marketCap)}</td>
@@ -500,7 +547,7 @@ async function loadPools() {
   statusEl.className = "status";
   try {
     lastFetchedPools = await fetchNewPools();
-    renderPoolTable();
+    applyVolumeWindow(); // sets displayVolume for the currently selected window + renders
     const now = new Date().toLocaleTimeString();
     statusEl.textContent = `✓ ${lastFetchedPools.length} pools · updated ${now} · auto-refresh every ${POOL_REFRESH_MS / 1000}s`;
     statusEl.className = "status ok";
